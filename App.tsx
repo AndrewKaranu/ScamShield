@@ -1,20 +1,47 @@
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import HomeScreen from './src/screens/HomeScreen';
+import PhoneScreen from './src/screens/PhoneScreen';
+import GmailScreen from './src/screens/GmailScreen';
+import MessageScreen from './src/screens/MessageScreen';
+
+export type RootStackParamList = {
+  Home: undefined;
+  Phone: undefined;
+  Gmail: undefined;
+  Message: undefined;
+};
+
+const Stack = createStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
+    <NavigationContainer>
       <StatusBar style="auto" />
-    </View>
+      <Stack.Navigator initialRouteName="Home">
+        <Stack.Screen 
+          name="Home" 
+          component={HomeScreen} 
+          options={{ title: 'Scam Prevention', headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="Phone" 
+          component={PhoneScreen} 
+          options={{ title: 'Phone Call', headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="Gmail" 
+          component={GmailScreen} 
+          options={{ title: 'Gmail', headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="Message" 
+          component={MessageScreen} 
+          options={{ title: 'Messages', headerShown: false }} 
+        />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
