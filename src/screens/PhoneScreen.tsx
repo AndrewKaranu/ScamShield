@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, TextInput,
 import { useMachine } from '@xstate/react';
 import { phoneMachine } from '../machines/phoneMachine';
 import { playAudio } from '../services/aiService';
+import { useAudioPlayerStatus } from 'expo-audio';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withRepeat } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -40,15 +41,44 @@ const ShakeButton = ({ onPress, children, style }: any) => {
 export default function PhoneScreen() {
   const [state, send] = useMachine(phoneMachine);
   const [inputText, setInputText] = useState('');
+  const [currentPlayer, setCurrentPlayer] = useState<any>(null);
 
   useEffect(() => {
     if (state.context.lastAudio) {
-        playAudio(state.context.lastAudio).then(sound => {
-            sound.setOnPlaybackStatusUpdate((status) => {
-                if (status.isLoaded && status.didJustFinish) {
-                    send({ type: 'AUDIO_FINISHED' });
-                }
-            });
+        console.log('Starting audio playback...');
+        playAudio(state.context.lastAudio).then(result => {
+            const player = (result as any)._player;
+            setCurrentPlayer(player);
+            console.log('Player set, isLoaded:', player.isLoaded, 'playing:', player.playing);
+            
+            // Give a small delay for player to start, then poll for completion
+            setTimeout(() => {
+                const checkInterval = setInterval(() => {
+                    console.log('Checking player status - playing:', player.playing, 'isLoaded:', player.isLoaded);
+                    // Check if finished: not playing AND either loaded or duration elapsed
+                    if (!player.playing && player.isLoaded) {
+                        clearInterval(checkInterval);
+                        console.log('Audio finished, cleaning up');
+                        send({ type: 'AUDIO_FINISHED' });
+                        setCurrentPlayer(null);
+                        player.remove();
+                    }
+                }, 200);
+                
+                // Safety timeout - if audio doesn't finish in 30 seconds, force finish
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    if (currentPlayer) {
+                        console.log('Safety timeout reached, forcing audio finish');
+                        send({ type: 'AUDIO_FINISHED' });
+                        setCurrentPlayer(null);
+                        player.remove();
+                    }
+                }, 30000);
+            }, 500);
+        }).catch(err => {
+            console.error('Audio playback error:', err);
+            send({ type: 'AUDIO_FINISHED' });
         });
     }
   }, [state.context.lastAudio]);
@@ -235,6 +265,8 @@ export default function PhoneScreen() {
     <SafeAreaView style={styles.container}>
       {state.matches('incoming') && renderIncoming()}
       {state.matches({ active: 'main' }) && renderActive()}
+      {state.matches({ active: 'processing' }) && renderActive()}
+      {state.matches({ active: 'speaking' }) && renderActive()}
       {state.matches({ active: 'keypad' }) && renderKeypad()}
       {state.matches('ended') && renderEnded()}
     </SafeAreaView>

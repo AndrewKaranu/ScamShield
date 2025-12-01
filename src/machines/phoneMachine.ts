@@ -11,6 +11,7 @@ type PhoneContext = {
   conversation: Message[];
   agentState: 'idle' | 'thinking' | 'speaking' | 'listening';
   lastAudio: string | null;
+  _pendingUserText: string | null;
 };
 
 type PhoneEvent = 
@@ -66,6 +67,7 @@ export const phoneMachine = setup({
     conversation: [],
     agentState: 'idle',
     lastAudio: null,
+    _pendingUserText: null,
   },
   states: {
     incoming: {
@@ -86,11 +88,9 @@ export const phoneMachine = setup({
             USER_SPEAK: {
                 target: 'processing',
                 actions: assign({
-                    conversation: ({ context, event }) => [
-                        ...context.conversation,
-                        { role: 'user', content: event.text }
-                    ],
-                    agentState: 'thinking'
+                    agentState: 'thinking',
+                    // Store userText temporarily, will add to conversation in processing
+                    _pendingUserText: ({ event }) => event.text
                 })
             }
           },
@@ -110,22 +110,24 @@ export const phoneMachine = setup({
                 src: 'aiAgent',
                 input: ({ context }) => ({
                     conversation: context.conversation,
-                    userText: context.conversation[context.conversation.length - 1].content
+                    userText: context._pendingUserText || ''
                 }),
                 onDone: {
                     target: 'speaking',
                     actions: assign({
                         conversation: ({ context, event }) => [
                             ...context.conversation,
+                            { role: 'user', content: context._pendingUserText || '' },
                             { role: 'assistant', content: event.output.text }
                         ],
                         agentState: 'speaking',
-                        lastAudio: ({ event }) => event.output.audio
+                        lastAudio: ({ event }) => event.output.audio,
+                        _pendingUserText: null
                     })
                 },
                 onError: {
                     target: 'main',
-                    actions: assign({ agentState: 'idle' }) // TODO: Handle error better
+                    actions: assign({ agentState: 'idle', _pendingUserText: null })
                 }
             }
         },
@@ -162,7 +164,8 @@ export const phoneMachine = setup({
             isSpeakerOn: false,
             conversation: [],
             agentState: 'idle',
-            lastAudio: null
+            lastAudio: null,
+            _pendingUserText: null
           }),
         },
       },
