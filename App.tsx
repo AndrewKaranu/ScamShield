@@ -6,12 +6,14 @@ import HomeScreen from './src/screens/HomeScreen';
 import PhoneScreen from './src/screens/PhoneScreen';
 import GmailScreen from './src/screens/GmailScreen';
 import MessageScreen from './src/screens/MessageScreen';
+import HydroQuebecScreen from './src/screens/HydroQuebec';
 
 export type RootStackParamList = {
   Home: undefined;
   Phone: undefined;
   Gmail: undefined;
   Message: undefined;
+  HydroQuebec: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -40,6 +42,11 @@ export default function App() {
           name="Message" 
           component={MessageScreen} 
           options={{ title: 'Messages', headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="HydroQuebec" 
+          component={HydroQuebecScreen} 
+          options={{ title: 'Website Simulation' }} 
         />
       </Stack.Navigator>
     </NavigationContainer>
