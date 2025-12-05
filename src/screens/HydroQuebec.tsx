@@ -1,24 +1,98 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, Image } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, Image, Modal } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons'; 
+import { GuideOverlay } from '../components/GuideOverlay';
 
 export default function HydroQuebecScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showScamAlert, setShowScamAlert] = useState(false);
   const navigation = useNavigation();
+  const route = useRoute();
+
+  const mode = (route.params as any)?.mode || 'practice';
+  const [guideStep, setGuideStep] = useState(2); // Start at 2 because 0 and 1 are in MessageScreen
 
   const handleLogin = () => {
-    // Simulation feedback
-    Alert.alert(
-      "Simulation Paused",
-      "In a real scam, clicking 'Log in' on a fake site sends your password directly to the scammer. Always check the website URL (address bar) before entering credentials.",
-      [{ text: "Back to Home", onPress: () => navigation.goBack() }]
-    );
+    if (email.length > 0 && password.length > 0) {
+        setShowScamAlert(true);
+    } else {
+        Alert.alert('Error', 'Please enter your email and password.');
+    }
+  };
+
+  const handleFinishSimulation = () => {
+    setShowScamAlert(false);
+    navigation.navigate('Home' as never);
   };
 
   return (
     <ScrollView style={styles.container}>
+      {/* Scam Alert Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showScamAlert}
+        onRequestClose={handleFinishSimulation}
+      >
+        <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                    <Ionicons name="warning" size={40} color="#E31837" />
+                    <Text style={styles.modalTitle}>Scam Detected!</Text>
+                </View>
+                <Text style={styles.modalText}>
+                    You just fell for a <Text style={{fontWeight: 'bold'}}>Phishing</Text> scam.
+                </Text>
+                <Text style={styles.modalText}>
+                    1. <Text style={{fontWeight: 'bold'}}>The Text:</Text> Scammers promise refunds to get you to act quickly without thinking.
+                </Text>
+                <Text style={styles.modalText}>
+                    2. <Text style={{fontWeight: 'bold'}}>The Link:</Text> The URL was <Text style={{fontStyle: 'italic'}}>hydro-quebec-refund.com</Text>, not <Text style={{fontStyle: 'italic'}}>hydroquebec.com</Text>.
+                </Text>
+                <Text style={styles.modalText}>
+                    3. <Text style={{fontWeight: 'bold'}}>The Goal:</Text> They want your login credentials to steal your identity or access your account.
+                </Text>
+                <TouchableOpacity style={styles.modalButton} onPress={handleFinishSimulation}>
+                    <Text style={styles.modalButtonText}>I Understand</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+      </Modal>
+
+      {mode === 'guide' && guideStep === 2 && (
+        <GuideOverlay 
+            text="Check the URL bar (if this were a real browser). The address 'hydro-quebec-refund.com' is fake. Real Hydro-Québec links end in .com and start with hydroquebec."
+            onNext={() => setGuideStep(3)}
+            position="top"
+        />
+      )}
+
+      {mode === 'guide' && guideStep === 3 && (
+        <GuideOverlay 
+            text="Notice the 'Information' box. Scammers often add fake notices about 'updates' or 'security' to make the site look more legitimate."
+            onNext={() => setGuideStep(4)}
+            position="top"
+        />
+      )}
+
+      {mode === 'guide' && guideStep === 4 && (
+        <GuideOverlay 
+            text="This is the trap. If you enter your email and password here, you are sending them directly to the scammer."
+            onNext={() => setGuideStep(5)}
+            position="center"
+        />
+      )}
+
+      {mode === 'guide' && guideStep === 5 && (
+        <GuideOverlay 
+            text="You've completed the guide! Remember: Always verify the URL before entering any personal information."
+            onNext={() => navigation.navigate('Home' as never)}
+            position="center"
+        />
+      )}
+
       {/* Header / Logo Area */}
       <View style={styles.header}>
         {/* Text representation of the logo */}
@@ -50,6 +124,7 @@ export default function HydroQuebecScreen() {
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
+            editable={mode !== 'guide'}
           />
         </View>
 
@@ -60,6 +135,7 @@ export default function HydroQuebecScreen() {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            editable={mode !== 'guide'}
           />
         </View>
 
@@ -67,7 +143,11 @@ export default function HydroQuebecScreen() {
           <Text style={styles.linkText}>Forgot your password?</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+        <TouchableOpacity 
+            style={[styles.loginButton, mode === 'guide' && { opacity: 0.6 }]} 
+            onPress={handleLogin}
+            disabled={mode === 'guide'}
+        >
           <Text style={styles.loginButtonText}>Log in</Text>
         </TouchableOpacity>
 
@@ -200,5 +280,55 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 14,
     lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 25,
+    width: '85%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#E31837',
+    marginTop: 10,
+  },
+  modalText: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 15,
+    textAlign: 'left',
+    width: '100%',
+    lineHeight: 22,
+  },
+  modalButton: {
+    backgroundColor: '#E31837',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    marginTop: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });

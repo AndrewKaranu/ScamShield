@@ -1,10 +1,12 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { useMachine } from '@xstate/react';
 import { messageMachine, Conversation } from '../machines/messageMachine';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { GuideOverlay } from '../components/GuideOverlay';
 
 // Pulse Component
 const PulseView = ({ children, style, disabled }: any) => {
@@ -17,14 +19,14 @@ const PulseView = ({ children, style, disabled }: any) => {
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   return (
-    <Animated.View style={[style, animatedStyle]}>
+    <Animated.View style={[style, animatedStyle, { justifyContent: 'center' }]}>
       <TouchableOpacity 
         activeOpacity={disabled ? 1 : 0.7}
         onPress={() => {
             if (disabled) pulse();
             else if (children.props.onPress) children.props.onPress();
         }}
-        style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
+        style={{ width: '100%' }}
       >
         {children}
       </TouchableOpacity>
@@ -35,13 +37,85 @@ const PulseView = ({ children, style, disabled }: any) => {
 export default function MessageScreen() {
   const [state, send] = useMachine(messageMachine);
   const { conversations, activeConversationId, isDarkMode, replyText } = state.context;
+  const navigation = useNavigation();
+  const route = useRoute();
+  const [guideStep, setGuideStep] = React.useState(0);
+  const mode = (route.params as any)?.mode || 'practice';
+
+  useEffect(() => {
+    if (route.params) {
+        const params = route.params as any;
+        if (params.scenario) {
+            send({ type: 'LOAD_SCENARIO', scenario: params.scenario });
+        }
+        if (params.initialConversationId) {
+            // Small delay to ensure scenario is loaded first if needed, though XState handles sync actions well
+            setTimeout(() => {
+                send({ type: 'OPEN_CONVERSATION', id: params.initialConversationId });
+            }, 10);
+        }
+    }
+  }, [route.params]);
 
   const theme = isDarkMode ? darkTheme : lightTheme;
+
+  const handleLinkPress = (url: string) => {
+    // In guide mode, only allow link press if it's triggered programmatically (we can't easily distinguish, 
+    // so we'll rely on the fact that the user can't click the link if we disable the Text onPress, 
+    // but the GuideOverlay calls this function directly).
+    // Actually, GuideOverlay calls this function directly. 
+    // But the Text component also calls it.
+    // We should check if the call is coming from the UI interaction.
+    // Since we can't pass a flag easily without changing signature, 
+    // let's handle it in the renderMessageText.
+    
+    if (url.includes('canadapost-pay.com')) {
+        navigation.navigate('CanadaPostPayment', { mode } as never);
+    } else if (url.includes('hydro-quebec-refund.com')) {
+        navigation.navigate('HydroQuebec', { mode } as never);
+    } else if (url.includes('td-security-update.com')) {
+        navigation.navigate('TDBank', { mode } as never);
+    } else {
+        Linking.openURL(url);
+    }
+  };
+
+  const renderMessageText = (text: string, isSent: boolean) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+
+    return (
+        <Text style={[
+            styles.messageText, 
+            isSent ? { color: 'white' } : { color: theme.text }
+        ]}>
+            {parts.map((part, index) => {
+                if (part.match(urlRegex)) {
+                    return (
+                        <Text 
+                            key={index} 
+                            style={{ textDecorationLine: 'underline', color: isSent ? 'white' : '#007AFF' }}
+                            onPress={() => {
+                                if (mode !== 'guide') {
+                                    handleLinkPress(part);
+                                }
+                            }}
+                        >
+                            {part}
+                        </Text>
+                    );
+                }
+                return part;
+            })}
+        </Text>
+    );
+  };
 
   const renderConversationItem = ({ item }: { item: Conversation }) => (
     <TouchableOpacity 
       style={[styles.itemContainer, { backgroundColor: theme.background, borderBottomColor: theme.border }]} 
       onPress={() => send({ type: 'OPEN_CONVERSATION', id: item.id })}
+      disabled={mode === 'guide'}
     >
       {item.unread && <View style={styles.unreadDot} />}
       <View style={[styles.avatar, { backgroundColor: item.avatarColor }]}>
@@ -83,6 +157,23 @@ export default function MessageScreen() {
         keyExtractor={item => item.id}
         renderItem={renderConversationItem}
       />
+      
+      {mode === 'guide' && guideStep === 0 && (
+        <GuideOverlay 
+            text={
+                (route.params as any)?.scenario === 'hydro-quebec' 
+                ? "Scammers often impersonate utility companies like Hydro-Québec. They promise a 'refund' to get you excited and lower your guard."
+                : (route.params as any)?.scenario === 'td-bank'
+                ? "Scammers often impersonate banks to create panic. They claim there is 'unauthorized access' to make you act fast."
+                : "Scammers often use official-looking names like 'Canada Post' to gain your trust. Notice the 'Unpaid fees' subject line designed to create urgency."
+            }
+            onNext={() => {
+                setGuideStep(1);
+                send({ type: 'OPEN_CONVERSATION', id: (route.params as any)?.scenario || 'canada-post' });
+            }}
+            position="top"
+        />
+      )}
     </View>
   );
 
@@ -93,17 +184,21 @@ export default function MessageScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.border }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => send({ type: 'BACK' })}>
+          <TouchableOpacity 
+            style={[styles.backBtn, { zIndex: 1 }, mode === 'guide' && { opacity: 0.5 }]} 
+            onPress={() => send({ type: 'BACK' })}
+            disabled={mode === 'guide'}
+          >
             <MaterialIcons name="arrow-back-ios" size={20} color="#007AFF" />
             <Text style={styles.headerLink}>Messages</Text>
           </TouchableOpacity>
-          <View style={styles.contactInfo}>
+          <View style={styles.contactInfo} pointerEvents="none">
             <View style={[styles.avatarSmall, { backgroundColor: conversation.avatarColor }]}>
                 <Text style={styles.avatarTextSmall}>{conversation.avatarText}</Text>
             </View>
             <Text style={[styles.contactName, { color: theme.secondaryText }]}>{conversation.sender}</Text>
           </View>
-          <MaterialIcons name="info-outline" size={24} color="#007AFF" />
+          <MaterialIcons name="info-outline" size={24} color="#007AFF" style={{ zIndex: 1 }} />
         </View>
 
         <KeyboardAvoidingView 
@@ -121,10 +216,7 @@ export default function MessageScreen() {
                 styles.bubble, 
                 item.type === 'sent' ? styles.bubbleSent : [styles.bubbleReceived, { backgroundColor: theme.bubbleReceived }]
               ]}>
-                <Text style={[
-                  styles.messageText, 
-                  item.type === 'sent' ? { color: 'white' } : { color: theme.text }
-                ]}>{item.text}</Text>
+                {renderMessageText(item.text, item.type === 'sent')}
               </View>
             )}
           />
@@ -139,9 +231,10 @@ export default function MessageScreen() {
                         placeholderTextColor={theme.secondaryText}
                         value={replyText}
                         onChangeText={(text) => send({ type: 'TYPE_REPLY', text })}
+                        editable={mode !== 'guide'}
                     />
                 ) : (
-                    <PulseView disabled={true} style={{ width: '100%', alignItems: 'flex-start' }}>
+                    <PulseView disabled={true} style={{ width: '100%' }}>
                         <Text style={[styles.inputPlaceholder, { color: theme.secondaryText }]}>Text Message</Text>
                     </PulseView>
                 )}
@@ -155,6 +248,29 @@ export default function MessageScreen() {
             )}
           </View>
         </KeyboardAvoidingView>
+
+        {mode === 'guide' && guideStep === 1 && (
+            <GuideOverlay 
+                text={
+                    (route.params as any)?.scenario === 'hydro-quebec'
+                    ? "They include a link to a fake website. 'hydro-quebec-refund.com' is NOT the real 'hydroquebec.com'. Always verify the URL!"
+                    : (route.params as any)?.scenario === 'td-bank'
+                    ? "They include a link to a fake website. 'td-security-update.com' is NOT the real 'td.com'. Banks don't use separate domains for updates."
+                    : "They include a link to a fake website. The URL 'canadapost-pay.com' is NOT the official 'canadapost.ca'. Always check the domain carefully!"
+                }
+                onNext={() => {
+                    setGuideStep(2);
+                    if ((route.params as any)?.scenario === 'hydro-quebec') {
+                        handleLinkPress('https://hydro-quebec-refund.com/claim');
+                    } else if ((route.params as any)?.scenario === 'td-bank') {
+                        handleLinkPress('https://td-security-update.com/v4');
+                    } else {
+                        handleLinkPress('https://canadapost-pay.com/track/CA892341');
+                    }
+                }}
+                position="center"
+            />
+        )}
       </View>
     );
   };
@@ -201,6 +317,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 10,
     borderBottomWidth: 1,
+    minHeight: 65,
+    position: 'relative',
   },
   headerTitle: {
     fontSize: 17,
@@ -275,6 +393,12 @@ const styles = StyleSheet.create({
   },
   contactInfo: {
     alignItems: 'center',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   avatarSmall: {
     width: 30,
@@ -332,6 +456,8 @@ const styles = StyleSheet.create({
   input: {
     fontSize: 16,
     maxHeight: 100,
+    padding: 0,
+    margin: 0,
   },
   inputPlaceholder: {
     fontSize: 16,

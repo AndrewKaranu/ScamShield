@@ -1,10 +1,14 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Modal, TextInput, Dimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Modal, TextInput, Dimensions, ScrollView } from 'react-native';
 import { useMachine } from '@xstate/react';
 import { mailMachine, Email } from '../machines/mailMachine';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '../../App';
+import { GuideOverlay } from '../components/GuideOverlay';
 
 const { width, height } = Dimensions.get('window');
 
@@ -34,6 +38,24 @@ const PulseView = ({ children, style, id }: any) => {
 export default function GmailScreen() {
   const [state, send] = useMachine(mailMachine);
   const { emails, selectedEmails, currentEmailId, isSideMenuOpen, isAccountModalOpen, snackbarMessage } = state.context;
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
+  const route = useRoute();
+  const [guideStep, setGuideStep] = useState(0);
+  const mode = (route.params as any)?.mode || 'practice';
+  const scenario = (route.params as any)?.scenario;
+
+  // Load scenario on mount
+  useEffect(() => {
+    if (scenario) {
+      send({ type: 'LOAD_SCENARIO', scenario });
+    }
+  }, [scenario]);
+
+  const handleScamLink = (scamType: string) => {
+    if (scamType === 'loto-quebec') {
+      navigation.navigate('LotoQuebec', { mode });
+    }
+  };
 
   // Snackbar Auto-Dismiss
   useEffect(() => {
@@ -111,13 +133,13 @@ export default function GmailScreen() {
         </View>
       ) : (
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => send({ type: 'OPEN_MENU' })} style={styles.menuBtn}>
+          <TouchableOpacity onPress={() => send({ type: 'OPEN_MENU' })} style={styles.menuBtn} disabled={mode === 'guide'}>
             <MaterialIcons name="menu" size={24} color="#5f6368" />
           </TouchableOpacity>
           <View style={styles.searchBar}>
             <MaterialIcons name="search" size={24} color="#5f6368" />
             <Text style={styles.searchText}>Search in mail</Text>
-            <TouchableOpacity onPress={() => send({ type: 'OPEN_ACCOUNT' })}>
+            <TouchableOpacity onPress={() => send({ type: 'OPEN_ACCOUNT' })} disabled={mode === 'guide'}>
                <View style={[styles.avatarSmall, { backgroundColor: '#5f6368' }]}>
                  <Text style={styles.avatarTextSmall}>A</Text>
                </View>
@@ -134,10 +156,22 @@ export default function GmailScreen() {
         contentContainerStyle={styles.listContent}
       />
 
-      <TouchableOpacity style={styles.composeBtn}>
+      <TouchableOpacity style={styles.composeBtn} disabled={mode === 'guide'}>
         <MaterialIcons name="edit" size={24} color="#c04b37" />
         <Text style={styles.composeText}>Compose</Text>
       </TouchableOpacity>
+
+      {/* Guide overlay for inbox */}
+      {mode === 'guide' && guideStep === 0 && scenario === 'loto-quebec' && (
+        <GuideOverlay 
+          text="Scammers send phishing emails that look legitimate. Notice this 'Loto-Québec' email promising you won money - a classic lottery scam!"
+          onNext={() => {
+            setGuideStep(1);
+            send({ type: 'OPEN_EMAIL', id: 'loto-quebec' });
+          }}
+          position="top"
+        />
+      )}
     </View>
   );
 
@@ -148,11 +182,11 @@ export default function GmailScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.detailHeader}>
-          <TouchableOpacity onPress={() => send({ type: 'BACK_TO_INBOX' })}>
+          <TouchableOpacity onPress={() => send({ type: 'BACK_TO_INBOX' })} disabled={mode === 'guide'}>
             <MaterialIcons name="arrow-back" size={24} color="black" />
           </TouchableOpacity>
           <View style={styles.detailActions}>
-            <TouchableOpacity onPress={() => send({ type: 'DELETE_EMAIL' })}>
+            <TouchableOpacity onPress={() => send({ type: 'DELETE_EMAIL' })} disabled={mode === 'guide'}>
               <MaterialIcons name="delete" size={24} color="black" />
             </TouchableOpacity>
             <MaterialIcons name="mail" size={24} color="black" style={{ marginLeft: 20 }} />
@@ -160,7 +194,7 @@ export default function GmailScreen() {
           </View>
         </View>
 
-        <View style={styles.detailContent}>
+        <ScrollView style={styles.detailScrollContent}>
           <View style={styles.detailSubjectRow}>
             <Text style={styles.detailSubject}>{email.subject}</Text>
             <MaterialIcons name="star-border" size={24} color="#5f6368" />
@@ -171,32 +205,72 @@ export default function GmailScreen() {
               <Text style={styles.avatarText}>{email.avatarText}</Text>
             </View>
             <View style={styles.detailSenderInfo}>
-              <Text style={styles.detailSenderName}>{email.sender}</Text>
-              <Text style={styles.detailTime}>{email.time}</Text>
+              <View style={styles.senderNameRow}>
+                <Text style={styles.detailSenderName}>{email.sender}</Text>
+                <Text style={styles.detailTime}>{email.time}</Text>
+              </View>
+              {email.senderEmail && (
+                <Text style={styles.senderEmail}>{email.senderEmail}</Text>
+              )}
             </View>
           </View>
 
+          {/* Email Body */}
           <Text style={styles.detailBody}>
-            {email.preview}
-            {'\n\n'}
-            [Full email content would go here...]
+            {email.body || email.preview}
           </Text>
 
-          <View style={styles.replyContainer}>
-            <TouchableOpacity style={styles.replyBtn} onPress={() => send({ type: 'REPLY' })}>
-              <MaterialIcons name="reply" size={20} color="#5f6368" />
-              <Text style={styles.replyBtnText}>Reply</Text>
+          {/* Scam CTA Button */}
+          {email.isScam && (
+            <TouchableOpacity 
+              style={styles.scamCtaButton} 
+              onPress={() => {
+                if (mode !== 'guide') {
+                  handleScamLink(email.scamType || '');
+                }
+              }}
+            >
+              <Text style={styles.scamCtaText}>🎁 CLAIM YOUR PRIZE NOW! 🎁</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.replyBtn}>
-              <MaterialIcons name="reply-all" size={20} color="#5f6368" />
-              <Text style={styles.replyBtnText}>Reply all</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.replyBtn}>
-              <MaterialIcons name="forward" size={20} color="#5f6368" />
-              <Text style={styles.replyBtnText}>Forward</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+          )}
+
+          {!email.isScam && (
+            <View style={styles.replyContainer}>
+              <TouchableOpacity style={styles.replyBtn} onPress={() => send({ type: 'REPLY' })}>
+                <MaterialIcons name="reply" size={20} color="#5f6368" />
+                <Text style={styles.replyBtnText}>Reply</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.replyBtn}>
+                <MaterialIcons name="reply-all" size={20} color="#5f6368" />
+                <Text style={styles.replyBtnText}>Reply all</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.replyBtn}>
+                <MaterialIcons name="forward" size={20} color="#5f6368" />
+                <Text style={styles.replyBtnText}>Forward</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Guide overlay for email detail */}
+        {mode === 'guide' && guideStep === 1 && email.isScam && (
+          <GuideOverlay 
+            text="Notice the RED FLAGS: 1) Urgency ('LAST CHANCE', '24 HOURS'). 2) Spelling error ('choosen'). 3) Suspicious sender email domain. 4) You never entered this lottery!"
+            onNext={() => setGuideStep(2)}
+            position="top"
+          />
+        )}
+
+        {mode === 'guide' && guideStep === 2 && email.isScam && (
+          <GuideOverlay 
+            text="The link goes to 'loto-quebec-winners.com' - NOT the real 'lotoquebec.com'. Scammers use similar-looking domains to trick you."
+            onNext={() => {
+              setGuideStep(3);
+              handleScamLink(email.scamType || '');
+            }}
+            position="center"
+          />
+        )}
       </View>
     );
   };
@@ -468,6 +542,10 @@ const styles = StyleSheet.create({
   detailContent: {
     padding: 16,
   },
+  detailScrollContent: {
+    flex: 1,
+    padding: 16,
+  },
   detailSubjectRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -670,5 +748,34 @@ const styles = StyleSheet.create({
   snackbarText: {
     color: 'white',
     fontSize: 14,
+  },
+  senderNameRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  senderEmail: {
+    fontSize: 12,
+    color: '#5f6368',
+    marginTop: 2,
+  },
+  scamCtaButton: {
+    backgroundColor: '#d93025',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  scamCtaText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });

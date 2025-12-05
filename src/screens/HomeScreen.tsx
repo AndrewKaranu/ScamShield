@@ -1,5 +1,5 @@
-import React, {useMemo} from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, {useMemo, useState} from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons'; // Standard icon library in Expo
@@ -7,9 +7,12 @@ import { Ionicons } from '@expo/vector-icons'; // Standard icon library in Expo
 type RootStackParamList = {
   Home: undefined;
   Phone: undefined;
-  Gmail: undefined;
-  Message: undefined;
+  Gmail: { scenario?: string; mode?: 'practice' | 'guide' } | undefined;
+  Message: { scenario?: string; mode?: 'practice' | 'guide'; initialConversationId?: string } | undefined;
   HydroQuebec: undefined;
+  CanadaPostPayment: { mode?: 'practice' | 'guide' } | undefined;
+  TDBank: { mode?: 'practice' | 'guide' } | undefined;
+  LotoQuebec: { mode?: 'practice' | 'guide' } | undefined;
 };
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
@@ -29,6 +32,8 @@ const SAFETY_TIPS = [
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
 
   const tipOfTheDay = useMemo(() => {
     // Get the number of days since Jan 1, 1970
@@ -36,6 +41,25 @@ export default function HomeScreen() {
     // Use modulo operator (%) to cycle through the array indefinitely
     return SAFETY_TIPS[daysSinceEpoch % SAFETY_TIPS.length];
   }, []);
+
+  const handleScenarioPress = (scenario: string) => {
+    setSelectedScenario(scenario);
+    setModalVisible(true);
+  };
+
+  const startSimulation = (mode: 'practice' | 'guide') => {
+    setModalVisible(false);
+    if (selectedScenario === 'canada-post') {
+        navigation.navigate('Message', { scenario: 'canada-post', mode });
+    } else if (selectedScenario === 'hydro-quebec') {
+        navigation.navigate('Message', { scenario: 'hydro-quebec', mode });
+    } else if (selectedScenario === 'td-bank') {
+        navigation.navigate('Message', { scenario: 'td-bank', mode });
+    } else if (selectedScenario === 'loto-quebec') {
+        // Loto-Quebec starts with a phishing email in Gmail
+        navigation.navigate('Gmail', { scenario: 'loto-quebec', mode });
+    }
+  };
 
   // Reusable Card Component for consistency and cleaner code
   const MenuCard = ({ title, subtitle, iconName, color, onPress }: any) => (
@@ -55,6 +79,50 @@ export default function HomeScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       
+      {/* Mode Selection Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Choose Mode</Text>
+                <Text style={styles.modalSubtitle}>How would you like to experience this simulation?</Text>
+                
+                <TouchableOpacity 
+                    style={[styles.modeButton, { backgroundColor: '#007AFF' }]}
+                    onPress={() => startSimulation('practice')}
+                >
+                    <Ionicons name="game-controller" size={24} color="white" style={{ marginRight: 10 }} />
+                    <View>
+                        <Text style={styles.modeButtonTitle}>Practice Mode</Text>
+                        <Text style={styles.modeButtonDesc}>Try to spot the scam yourself</Text>
+                    </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={[styles.modeButton, { backgroundColor: '#34C759' }]}
+                    onPress={() => startSimulation('guide')}
+                >
+                    <Ionicons name="school" size={24} color="white" style={{ marginRight: 10 }} />
+                    <View>
+                        <Text style={styles.modeButtonTitle}>Guide Mode</Text>
+                        <Text style={styles.modeButtonDesc}>Step-by-step explanation</Text>
+                    </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={styles.closeButton}
+                    onPress={() => setModalVisible(false)}
+                >
+                    <Text style={styles.closeButtonText}>Cancel</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+      </Modal>
+
       {/* Header Section */}
       <View style={styles.header}>
         <Text style={styles.greeting}>Hello, Learner</Text>
@@ -100,11 +168,35 @@ export default function HomeScreen() {
       />
 
       <MenuCard 
-        title="Fake Websites" 
+        title="Login Scam" 
         subtitle="Spot fake Hydro Québec logins"
         iconName="globe" 
         color="#005F9E" // Hydro Blue
-        onPress={() => navigation.navigate('HydroQuebec')} 
+        onPress={() => handleScenarioPress('hydro-quebec')} 
+      />
+
+      <MenuCard 
+        title="Payment Scam" 
+        subtitle="Spot fake Canada Post payments"
+        iconName="card" 
+        color="#E31837" // Canada Post Red
+        onPress={() => handleScenarioPress('canada-post')} 
+      />
+
+      <MenuCard 
+        title="Bank Security Scam" 
+        subtitle="Spot fake TD Bank security updates"
+        iconName="shield-checkmark" 
+        color="#008a00" // TD Green
+        onPress={() => handleScenarioPress('td-bank')} 
+      />
+
+      <MenuCard 
+        title="Lottery Win Scam" 
+        subtitle="Spot fake Loto-Québec prize claims"
+        iconName="trophy" 
+        color="#FFD700" // Gold
+        onPress={() => handleScenarioPress('loto-quebec')} 
       />
 
     </ScrollView>
@@ -205,5 +297,62 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     fontSize: 16, // Larger
     color: '#6B7280', // Medium Grey
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 25,
+    width: '85%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#111827',
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 15,
+  },
+  modeButtonTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  modeButtonDesc: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
+  },
+  closeButton: {
+    marginTop: 10,
+    padding: 10,
+  },
+  closeButtonText: {
+    color: '#6B7280',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

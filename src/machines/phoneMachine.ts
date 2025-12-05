@@ -1,5 +1,5 @@
 import { setup, assign, fromCallback, fromPromise } from 'xstate';
-import { generateText, generateAudio } from '../services/aiService';
+import { generateText, generateAudio, transcribeAudio } from '../services/aiService';
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
@@ -9,9 +9,10 @@ type PhoneContext = {
   isMuted: boolean;
   isSpeakerOn: boolean;
   conversation: Message[];
-  agentState: 'idle' | 'thinking' | 'speaking' | 'listening';
+  agentState: 'idle' | 'thinking' | 'speaking' | 'listening' | 'recording' | 'transcribing';
   lastAudio: string | null;
   _pendingUserText: string | null;
+  _recordingUri: string | null;
 };
 
 type PhoneEvent = 
@@ -26,6 +27,9 @@ type PhoneEvent =
   | { type: 'PRESS_KEY'; key: string }
   | { type: 'RESTART' }
   | { type: 'USER_SPEAK'; text: string }
+  | { type: 'START_RECORDING' }
+  | { type: 'STOP_RECORDING'; uri: string }
+  | { type: 'TRANSCRIPTION_COMPLETE'; text: string }
   | { type: 'AUDIO_FINISHED' };
 
 const timerActor = fromCallback(({ sendBack }) => {
@@ -47,6 +51,11 @@ const aiActor = fromPromise(async ({ input }: { input: { conversation: Message[]
     return { text, audio };
 });
 
+const transcribeActor = fromPromise(async ({ input }: { input: { recordingUri: string } }) => {
+    const text = await transcribeAudio(input.recordingUri);
+    return { text };
+});
+
 export const phoneMachine = setup({
   types: {
     context: {} as PhoneContext,
@@ -55,6 +64,7 @@ export const phoneMachine = setup({
   actors: {
     timer: timerActor,
     aiAgent: aiActor,
+    transcriber: transcribeActor,
   },
 }).createMachine({
   id: 'phone',
@@ -68,6 +78,7 @@ export const phoneMachine = setup({
     agentState: 'idle',
     lastAudio: null,
     _pendingUserText: null,
+    _recordingUri: null,
   },
   states: {
     incoming: {
@@ -83,6 +94,7 @@ export const phoneMachine = setup({
       initial: 'main',
       states: {
         main: {
+          entry: assign({ agentState: 'listening' }),
           on: {
             SHOW_KEYPAD: { target: 'keypad' },
             USER_SPEAK: {
@@ -92,8 +104,60 @@ export const phoneMachine = setup({
                     // Store userText temporarily, will add to conversation in processing
                     _pendingUserText: ({ event }) => event.text
                 })
+            },
+            START_RECORDING: {
+                target: 'recording',
+                actions: assign({ agentState: 'recording' })
             }
           },
+        },
+        recording: {
+          on: {
+            STOP_RECORDING: {
+                target: 'transcribing',
+                actions: assign({
+                    agentState: 'transcribing',
+                    _recordingUri: ({ event }) => event.uri
+                })
+            },
+            END_CALL: { target: '#phone.ended' }
+          }
+        },
+        transcribing: {
+            invoke: {
+                src: 'transcriber',
+                input: ({ context }) => ({
+                    recordingUri: context._recordingUri || ''
+                }),
+                onDone: [
+                    {
+                        // If transcription is empty, go back to listening
+                        guard: ({ event }) => !event.output.text || event.output.text.trim() === '',
+                        target: 'main',
+                        actions: assign({
+                            agentState: 'listening',
+                            _recordingUri: null,
+                            _pendingUserText: null
+                        })
+                    },
+                    {
+                        // If transcription has content, proceed to processing
+                        target: 'processing',
+                        actions: assign({
+                            agentState: 'thinking',
+                            _pendingUserText: ({ event }) => event.output.text,
+                            _recordingUri: null
+                        })
+                    }
+                ],
+                onError: {
+                    target: 'main',
+                    actions: assign({ 
+                        agentState: 'listening', 
+                        _recordingUri: null 
+                    })
+                }
+            }
         },
         keypad: {
           on: {
@@ -165,7 +229,8 @@ export const phoneMachine = setup({
             conversation: [],
             agentState: 'idle',
             lastAudio: null,
-            _pendingUserText: null
+            _pendingUserText: null,
+            _recordingUri: null
           }),
         },
       },

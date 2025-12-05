@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { useMachine } from '@xstate/react';
 import { phoneMachine } from '../machines/phoneMachine';
-import { playAudio } from '../services/aiService';
-import { useAudioPlayerStatus } from 'expo-audio';
+import { playAudio, playRingtone, enableRecordingMode } from '../services/aiService';
+import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withRepeat } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -40,9 +40,67 @@ const ShakeButton = ({ onPress, children, style }: any) => {
 
 export default function PhoneScreen() {
   const [state, send] = useMachine(phoneMachine);
-  const [inputText, setInputText] = useState('');
   const [currentPlayer, setCurrentPlayer] = useState<any>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const ringtonePlayerRef = useRef<any>(null);
 
+  // Function to stop ringtone
+  const stopRingtone = () => {
+    console.log('stopRingtone called, ref:', ringtonePlayerRef.current);
+    if (ringtonePlayerRef.current) {
+      ringtonePlayerRef.current.stop();
+      ringtonePlayerRef.current = null;
+    }
+  };
+
+  // Request recording permissions on mount
+  useEffect(() => {
+    requestRecordingPermissionsAsync();
+  }, []);
+
+  // Play ringtone when in incoming state
+  const isIncoming = state.matches('incoming');
+  useEffect(() => {
+    let mounted = true;
+    
+    if (isIncoming) {
+      // Play ringtone - make sure you have added the ringtone file
+      playRingtone(require('../../assets/ringtone.mp3'))
+        .then(result => {
+          if (mounted) {
+            ringtonePlayerRef.current = result;
+          } else {
+            // Component unmounted or state changed, stop immediately
+            result.stop();
+          }
+        })
+        .catch(err => {
+          console.log('No ringtone file found or error playing:', err);
+        });
+    } else {
+      // Stop ringtone when leaving incoming state
+      stopRingtone();
+    }
+    
+    return () => {
+      mounted = false;
+      stopRingtone();
+    };
+  }, [isIncoming]);
+
+  // Wrapper functions for accept/decline that ensure ringtone stops
+  const handleAccept = () => {
+    stopRingtone();
+    send({ type: 'ACCEPT' });
+  };
+
+  const handleDecline = () => {
+    stopRingtone();
+    send({ type: 'DECLINE' });
+  };
+
+  // Handle audio playback for AI responses
   useEffect(() => {
     if (state.context.lastAudio) {
         console.log('Starting audio playback...');
@@ -83,6 +141,34 @@ export default function PhoneScreen() {
     }
   }, [state.context.lastAudio]);
 
+  const startRecording = async () => {
+    try {
+      setIsRecording(true);
+      send({ type: 'START_RECORDING' });
+      // Enable recording mode before starting
+      await enableRecordingMode();
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = async () => {
+    try {
+      await audioRecorder.stop();
+      setIsRecording(false);
+      const uri = audioRecorder.uri;
+      if (uri) {
+        send({ type: 'STOP_RECORDING', uri });
+      }
+    } catch (err) {
+      console.error('Failed to stop recording:', err);
+      setIsRecording(false);
+    }
+  };
+
   const formatTime = (sec: number) => {
     const minutes = Math.floor(sec / 60);
     const seconds = sec % 60;
@@ -97,13 +183,13 @@ export default function PhoneScreen() {
       </View>
       <View style={styles.callActions}>
         <View style={styles.actionButtonContainer}>
-          <TouchableOpacity onPress={() => send({ type: 'DECLINE' })} style={styles.declineBtn}>
+          <TouchableOpacity onPress={handleDecline} style={styles.declineBtn}>
             <Image source={require('../../assets/decline-icon.png')} style={styles.actionIcon} />
           </TouchableOpacity>
           <Text style={styles.actionLabel}>Decline</Text>
         </View>
         <View style={styles.actionButtonContainer}>
-          <TouchableOpacity onPress={() => send({ type: 'ACCEPT' })} style={styles.acceptBtn}>
+          <TouchableOpacity onPress={handleAccept} style={styles.acceptBtn}>
             <Image source={require('../../assets/accept-icon.png')} style={styles.actionIcon} />
           </TouchableOpacity>
           <Text style={styles.actionLabel}>Accept</Text>
@@ -121,10 +207,12 @@ export default function PhoneScreen() {
       <View style={styles.callerInfo}>
         <Text style={styles.callerName}>Tech Maniac</Text>
         <Text style={styles.timer}>{formatTime(state.context.duration)}</Text>
-        {state.context.agentState !== 'idle' && (
+        {state.context.agentState !== 'idle' && state.context.agentState !== 'listening' && (
             <Text style={styles.statusText}>
                 {state.context.agentState === 'thinking' ? 'Thinking...' : 
-                 state.context.agentState === 'speaking' ? 'Speaking...' : 'Listening...'}
+                 state.context.agentState === 'speaking' ? 'Speaking...' : 
+                 state.context.agentState === 'recording' ? 'Recording...' :
+                 state.context.agentState === 'transcribing' ? 'Processing speech...' : 'Listening...'}
             </Text>
         )}
       </View>
@@ -182,32 +270,33 @@ export default function PhoneScreen() {
         </View>
       </View>
 
-      {/* Conversation Input */}
-      <View style={styles.inputContainer}>
-        <TextInput
-            style={styles.input}
-            placeholder="Type to speak..."
-            placeholderTextColor="#999"
-            value={inputText}
-            onChangeText={setInputText}
-            onSubmitEditing={() => {
-                if (inputText.trim()) {
-                    send({ type: 'USER_SPEAK', text: inputText });
-                    setInputText('');
-                }
-            }}
-        />
+      {/* Conversation Input - Mic Button */}
+      <View style={styles.micContainer}>
         <TouchableOpacity 
-            onPress={() => {
-                if (inputText.trim()) {
-                    send({ type: 'USER_SPEAK', text: inputText });
-                    setInputText('');
-                }
-            }}
-            style={styles.sendBtn}
+            onPressIn={startRecording}
+            onPressOut={stopRecording}
+            style={[
+              styles.micButton, 
+              isRecording && styles.micButtonActive,
+              (state.context.agentState === 'thinking' || 
+               state.context.agentState === 'speaking' || 
+               state.context.agentState === 'transcribing') && styles.micButtonDisabled
+            ]}
+            disabled={
+              state.context.agentState === 'thinking' || 
+              state.context.agentState === 'speaking' || 
+              state.context.agentState === 'transcribing'
+            }
         >
-            <MaterialIcons name="send" size={24} color="white" />
+            <MaterialIcons 
+              name={isRecording ? "mic" : "mic-none"} 
+              size={40} 
+              color={isRecording ? "#FF3B30" : "white"} 
+            />
         </TouchableOpacity>
+        <Text style={styles.micHint}>
+          {isRecording ? 'Release to send' : 'Hold to speak'}
+        </Text>
       </View>
 
       <View style={styles.endCallContainer}>
@@ -265,6 +354,8 @@ export default function PhoneScreen() {
     <SafeAreaView style={styles.container}>
       {state.matches('incoming') && renderIncoming()}
       {state.matches({ active: 'main' }) && renderActive()}
+      {state.matches({ active: 'recording' }) && renderActive()}
+      {state.matches({ active: 'transcribing' }) && renderActive()}
       {state.matches({ active: 'processing' }) && renderActive()}
       {state.matches({ active: 'speaking' }) && renderActive()}
       {state.matches({ active: 'keypad' }) && renderKeypad()}
@@ -437,25 +528,29 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontWeight: '600',
   },
-  inputContainer: {
-    flexDirection: 'row',
-    width: '90%',
+  micContainer: {
     alignItems: 'center',
     marginBottom: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 25,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
   },
-  input: {
-    flex: 1,
-    color: 'white',
-    height: 40,
-    paddingHorizontal: 10,
+  micButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  sendBtn: {
-    padding: 8,
-    backgroundColor: '#007AFF',
-    borderRadius: 20,
+  micButtonActive: {
+    backgroundColor: 'rgba(255,59,48,0.3)',
+    borderWidth: 3,
+    borderColor: '#FF3B30',
+  },
+  micButtonDisabled: {
+    opacity: 0.5,
+  },
+  micHint: {
+    color: '#999',
+    fontSize: 14,
   },
 });

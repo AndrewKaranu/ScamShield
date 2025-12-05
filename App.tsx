@@ -7,13 +7,19 @@ import PhoneScreen from './src/screens/PhoneScreen';
 import GmailScreen from './src/screens/GmailScreen';
 import MessageScreen from './src/screens/MessageScreen';
 import HydroQuebecScreen from './src/screens/HydroQuebec';
+import CanadaPostPaymentScreen from './src/screens/CanadaPostPaymentScreen';
+import TDBankScreen from './src/screens/TDBankScreen';
+import LotoQuebecScreen from './src/screens/LotoQuebecScreen';
 
 export type RootStackParamList = {
   Home: undefined;
   Phone: undefined;
-  Gmail: undefined;
-  Message: undefined;
-  HydroQuebec: undefined;
+  Gmail: { scenario?: string; mode?: 'practice' | 'guide' } | undefined;
+  Message: { scenario?: string; mode?: 'practice' | 'guide' } | undefined;
+  HydroQuebec: { mode?: 'practice' | 'guide' } | undefined;
+  CanadaPostPayment: { mode?: 'practice' | 'guide' } | undefined;
+  TDBank: { mode?: 'practice' | 'guide' } | undefined;
+  LotoQuebec: { mode?: 'practice' | 'guide' } | undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -47,6 +53,21 @@ export default function App() {
           name="HydroQuebec" 
           component={HydroQuebecScreen} 
           options={{ title: 'Website Simulation' }} 
+        />
+        <Stack.Screen 
+          name="CanadaPostPayment" 
+          component={CanadaPostPaymentScreen} 
+          options={{ title: 'Canada Post Payment', headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="TDBank" 
+          component={TDBankScreen} 
+          options={{ title: 'TD Bank Security', headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="LotoQuebec" 
+          component={LotoQuebecScreen} 
+          options={{ title: 'Loto-Québec', headerShown: false }} 
         />
       </Stack.Navigator>
     </NavigationContainer>
