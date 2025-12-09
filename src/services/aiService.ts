@@ -185,42 +185,30 @@ export const transcribeAudio = async (audioUri: string): Promise<string> => {
     // Ensure URI is correct
     const uri = audioUri.startsWith('file://') ? audioUri : `file://${audioUri}`;
     
-    // Use the new Expo FileSystem API to read the file
-    const audioFile = new File(uri);
+    // Get filename from URI
+    const filename = uri.split('/').pop() || 'recording.m4a';
     
-    // Check if file exists and get size (if possible via Blob interface)
-    // Note: File implements Blob, so it should have size property
-    const size = (audioFile as any).size;
-    console.log('Audio file object created. Size:', size);
-
-    // Read file as ArrayBuffer to ensure we have the data
-    console.log('Reading file as ArrayBuffer...');
-    const buffer = await audioFile.arrayBuffer();
-    console.log('File read successfully. Buffer byteLength:', buffer.byteLength);
-    
-    if (buffer.byteLength === 0) {
-        console.error('Audio file is empty!');
-        throw new Error('Audio file is empty');
-    }
-
-    // Create a Blob from the buffer
-    // Try 'audio/m4a' as mime type for .m4a files
-    const blob = new Blob([buffer], { type: 'audio/m4a' });
-    
-    // Create form data
+    // In React Native, FormData works with file objects specified as { uri, type, name }
+    // This is the native RN pattern for file uploads - it handles reading the file internally
     const formData = new FormData();
     formData.append('model_id', 'scribe_v1');
-    // Append the blob
-    formData.append('file', blob, 'recording.m4a');
     
-    console.log('Sending request to ElevenLabs STT...');
+    // React Native's FormData accepts this special object format for files
+    // The RN networking layer will read the file from the URI automatically
+    formData.append('file', {
+      uri: uri,
+      type: 'audio/m4a',
+      name: filename,
+    } as any);
+    
+    console.log('Sending request to ElevenLabs STT with file:', filename);
     
     const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
       method: 'POST',
       headers: {
         'xi-api-key': ELEVENLABS_API_KEY,
         'Accept': 'application/json',
-        // Do NOT set Content-Type here, let fetch set it with boundary
+        // Do NOT set Content-Type here, let fetch set it with proper multipart boundary
       },
       body: formData,
     });
