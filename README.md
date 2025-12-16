@@ -61,11 +61,16 @@ Realistic phishing page simulations:
 
 Don't want to run the code yourself? Email **andrewkaranu03@gmail.com** and I'll start the server and send you a link to open directly in Expo Go.
 
+**What you need:**
+1. Download "Expo Go" from the [App Store](https://apps.apple.com/app/expo-go/id982107779) (iOS) or [Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent) (Android)
+2. Email me and I'll send you a link
+3. Open the link on your phone - it will launch the app in Expo Go
+
 ### Option 2: Run It Yourself
 
 #### Prerequisites
 - Node.js (14+)
-- Expo Go app on your mobile device
+- Expo Go app on your mobile device (see links above)
 
 #### Install and Run
 
@@ -75,7 +80,14 @@ npm install
 npx expo start
 ```
 
-Scan the QR code with Expo Go to run on your phone.
+#### Connect Your Phone
+
+1. Make sure your phone and computer are on the **same WiFi network**
+2. Open Expo Go on your phone
+3. **iOS**: Scan the QR code with your Camera app, then tap the notification to open in Expo Go
+4. **Android**: Tap "Scan QR code" in Expo Go and scan the QR code from your terminal
+
+> **Tip:** If you have connection issues, try running `npx expo start --tunnel` instead - this works even on different networks but you have to have Ngrok installed.
 
 #### API Keys
 
@@ -88,6 +100,12 @@ module.exports = {
   ELEVENLABS_VOICE_ID: 'your-elevenlabs-voice-id'
 };
 ```
+
+**Where to get API keys:**
+
+- **xAI Grok** - Sign up at [console.x.ai](https://console.x.ai/) to get your API key. Used for AI-powered phone call conversations.
+
+- **ElevenLabs** - Create an account at [elevenlabs.io](https://elevenlabs.io/). Go to your Profile → API Keys to get your key. For Voice ID, go to Voices → click any voice → copy the Voice ID from the URL or settings. Used for realistic text-to-speech and speech-to-text.
 
 ## License & Safety
 
