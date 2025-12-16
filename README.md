@@ -1,46 +1,79 @@
 # ScamPreventionApp
 
-A small React Native + Expo app that simulates phishing and phone-call scam scenarios for training and testing. 
+A React Native + Expo app that trains users to recognize scams through realistic simulations of phone calls, text messages, and emails.
 
-Quick start
+## Features
 
-Prerequisites
+### 🎮 Two Modes
+
+**Test Mode** - Take a scored test with 6 random scenarios (mix of scams and legitimate messages). Get graded A-F based on your responses.
+
+**Practice Mode** - Explore individual scenarios at your own pace with optional guided walkthroughs.
+
+### 📞 Phone Call Scams
+- **Grandchild Emergency** - Fake family member in trouble asking for money
+- **Bank Fraud Department** - Caller pretending to be from your bank's security team
+- **Hydro-Québec** - Fake utility company threatening service disconnection
+
+### 💬 Text Message Scams
+- **Canada Post Fee** - Fake delivery notification asking for payment
+- **Hydro-Québec Refund** - Phishing link disguised as a refund offer
+- **TD Bank Security** - Fake security alert with malicious download
+
+### 📧 Email Scams
+- **Loto-Québec Prize** - Fake lottery winning notification
+
+### ✅ Legitimate Scenarios (for Test Mode)
+The app also includes real legitimate messages to train users not to be overly paranoid:
+- Canada Post delivery updates
+- Medical clinic reminders
+- SAAQ notices
+- Google security codes
+- CRA account updates
+- Desjardins activity alerts
+
+### 🌐 Fake Websites
+Realistic phishing page simulations:
+- Hydro-Québec login page
+- Canada Post payment portal
+- TD Bank security update page
+- Loto-Québec prize claim site
+
+## Scoring (Test Mode)
+
+| Grade | Score | Meaning |
+|-------|-------|---------|
+| A | 90-100 | Excellent protection |
+| B | 80-89 | Good awareness |
+| C | 70-79 | Needs improvement |
+| D | 60-69 | At risk |
+| F | 0-59 | High risk |
+
+**Metrics tracked:**
+- Call duration (shorter = better)
+- Clicked scam links
+- Entered credentials/payment info
+- Correctly identified legitimate messages
+
+## Quick Start
+
+### Prerequisites
 - Node.js (14+)
-- npm or yarn
-- Expo (you can use `npx expo` so installing globally isn't required)
-- Expo Go app on your mobile device (for testing on a phone)
+- Expo Go app on your mobile device
 
-Install and run
+### Install and Run
 
-1. Install dependencies
-
-```powershell
+```bash
 cd ScamPreventionApp
 npm install
-```
-
-2. Start the dev server
-
-```powershell
-npm start
-# or
 npx expo start
 ```
 
-Testing on Expo Go (mobile)
-- Open the Expo Dev Tools (the browser UI) or use the terminal QR code.
-- Scan the QR code in Expo Dev Tools with the Expo Go app (iOS/Android) to run the app on your device.
+Scan the QR code with Expo Go to run on your phone.
 
-Testing in a web browser
-- In the Expo Dev Tools select "Run in web browser" or run:
+### API Keys
 
-```powershell
-npx expo start --web
-```
-
-Environment / API keys
-
-The app expects ElevenLabs and xAI (Grok) API keys. Create a local config file at `src/config/apiKeys.local.js` (not committed) with the following shape:
+Create `src/config/apiKeys.local.js`:
 
 ```js
 module.exports = {
@@ -50,11 +83,7 @@ module.exports = {
 };
 ```
 
-Notes and testing tips
-- Grant microphone permissions when prompted (required for speech recording).
-- Open the Phone simulation screen, press-and-hold the mic button to record, then release to send the recording for transcription.
-- If transcription returns empty, check logs in the Metro/Expo terminal for `Transcribing audio from:` and `Buffer byteLength`—these help diagnose recording/upload issues.
+## License & Safety
 
-License & safety
-- Intended for demo/training only. Do not deploy phishing pages to production or use this project to harm others.
+**For training purposes only.** Do not use this project to harm others.
 
