@@ -175,6 +175,64 @@ const tdBankConversations: Conversation[] = [
     defaultConversations[1], // Boss
 ];
 
+// ============================================
+// LEGITIMATE (NON-SCAM) TEXT SCENARIOS
+// ============================================
+
+const legitCanadaPostConversations: Conversation[] = [
+    {
+        id: 'legit-canada-post',
+        sender: 'Canada Post',
+        time: 'Today',
+        preview: 'Delivery attempt today for package #CA-938271',
+        avatarColor: '#E31837',
+        avatarText: 'CP',
+        unread: true,
+        active: false, // No reply needed
+        messages: [
+            { type: 'received', text: 'A delivery attempt will be made today for package #CA-938271.\nTo track your item, click here:\nhttps://www.canadapost-postescanada.ca/track\nSignature may be required upon delivery.\nThank you,\nCanada Post' }
+        ]
+    },
+    defaultConversations[0], // Mom
+    defaultConversations[1], // Boss
+];
+
+const legitClinicConversations: Conversation[] = [
+    {
+        id: 'legit-clinic',
+        sender: 'Medical Clinic',
+        time: 'Today',
+        preview: 'Appointment reminder for tomorrow',
+        avatarColor: '#3B82F6',
+        avatarText: 'MC',
+        unread: true,
+        active: true,
+        messages: [
+            { type: 'received', text: 'Reminder: Your appointment is\nscheduled for tomorrow at 10:30 AM\nwith Dr. Martin.\n\nReply 1 to confirm.\nReply 2 to cancel.\n\nDo not reply with personal\nmedical information.' }
+        ]
+    },
+    defaultConversations[0], // Mom
+    defaultConversations[2], // Jessica
+];
+
+const legitSaaqConversations: Conversation[] = [
+    {
+        id: 'legit-saaq',
+        sender: 'SAAQ',
+        time: 'Today',
+        preview: 'Driver\'s licence renewal notice available',
+        avatarColor: '#1D4ED8',
+        avatarText: 'SQ',
+        unread: true,
+        active: false, // No reply needed
+        messages: [
+            { type: 'received', text: 'SAAQ\nYour driver\'s licence renewal\nnotice is available in your\nonline account.\n\nTo review your notice, visit:\nhttps://saaq.gouv.qc.ca\n\nDo not reply to this message.' }
+        ]
+    },
+    defaultConversations[1], // Boss
+    defaultConversations[3], // Landlord
+];
+
 const getConversationsForScenario = (scenario: string) => {
     switch (scenario) {
         case 'canada-post':
@@ -185,6 +243,13 @@ const getConversationsForScenario = (scenario: string) => {
             return hydroQuebecConversations;
         case 'td-bank':
             return tdBankConversations;
+        // Legitimate scenarios
+        case 'legit-canada-post':
+            return legitCanadaPostConversations;
+        case 'legit-clinic':
+            return legitClinicConversations;
+        case 'legit-saaq':
+            return legitSaaqConversations;
         default:
             return [...defaultConversations, ...purolatorConversations]; // Default view shows everything or a mix
     }
@@ -235,9 +300,27 @@ export const messageMachine = setup({
             conversations: ({ context }) => {
               return context.conversations.map(c => {
                 if (c.id === context.activeConversationId) {
+                  const newMessages = [...c.messages, { type: 'sent' as const, text: context.replyText }];
+                  
+                  // Handle clinic auto-replies
+                  if (c.id === 'legit-clinic') {
+                    const trimmedReply = context.replyText.trim();
+                    if (trimmedReply === '1') {
+                      newMessages.push({ 
+                        type: 'received' as const, 
+                        text: 'Thank you! Your appointment with Dr. Martin tomorrow at 10:30 AM has been confirmed. Please arrive 15 minutes early.' 
+                      });
+                    } else if (trimmedReply === '2') {
+                      newMessages.push({ 
+                        type: 'received' as const, 
+                        text: 'Your appointment has been cancelled. Please call 514-555-0100 to reschedule.' 
+                      });
+                    }
+                  }
+                  
                   return {
                     ...c,
-                    messages: [...c.messages, { type: 'sent' as const, text: context.replyText }]
+                    messages: newMessages
                   };
                 }
                 return c;

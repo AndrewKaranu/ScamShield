@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, Image, Modal } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons'; 
 import { GuideOverlay } from '../components/GuideOverlay';
+import { useTestMode } from '../context/TestModeContext';
 
 export default function HydroQuebecScreen() {
   const [email, setEmail] = useState('');
@@ -13,9 +14,22 @@ export default function HydroQuebecScreen() {
 
   const mode = (route.params as any)?.mode || 'practice';
   const [guideStep, setGuideStep] = useState(2); // Start at 2 because 0 and 1 are in MessageScreen
+  const { isTestMode, recordMetrics, completeCurrentScam } = useTestMode();
+  const [hasRecordedMetrics, setHasRecordedMetrics] = useState(false);
+
+  // Record that user entered credentials when they arrive at this screen in test mode
+  useEffect(() => {
+    if (isTestMode && !hasRecordedMetrics) {
+      recordMetrics({ enteredCredentials: true, clickedScamLink: true });
+      setHasRecordedMetrics(true);
+    }
+  }, [isTestMode, hasRecordedMetrics]);
 
   const handleLogin = () => {
     if (email.length > 0 && password.length > 0) {
+        if (isTestMode) {
+          recordMetrics({ sharedSensitiveInfo: true });
+        }
         setShowScamAlert(true);
     } else {
         Alert.alert('Error', 'Please enter your email and password.');
@@ -24,7 +38,17 @@ export default function HydroQuebecScreen() {
 
   const handleFinishSimulation = () => {
     setShowScamAlert(false);
-    navigation.navigate('Home' as never);
+    if (isTestMode) {
+      completeCurrentScam();
+      navigation.navigate('TestMode' as never);
+    } else {
+      navigation.navigate('Home' as never);
+    }
+  };
+
+  const handleContinueTest = () => {
+    completeCurrentScam();
+    navigation.navigate('TestMode' as never);
   };
 
   return (
@@ -158,6 +182,14 @@ export default function HydroQuebecScreen() {
             </TouchableOpacity>
         </View>
       </View>
+
+      {/* Test Mode Continue Button */}
+      {isTestMode && (
+        <TouchableOpacity style={styles.testCompleteButton} onPress={handleContinueTest}>
+          <Ionicons name="checkmark-circle" size={20} color="white" />
+          <Text style={styles.testCompleteButtonText}>I'm Done - Continue Test</Text>
+        </TouchableOpacity>
+      )}
       
     </ScrollView>
   );
@@ -330,5 +362,25 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  testCompleteButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 16,
+    backgroundColor: 'rgba(5, 150, 105, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  testCompleteButtonText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

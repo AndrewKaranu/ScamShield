@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { useMachine } from '@xstate/react';
 import { messageMachine, Conversation } from '../machines/messageMachine';
@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { GuideOverlay } from '../components/GuideOverlay';
+import { useTestMode } from '../context/TestModeContext';
 
 // Pulse Component
 const PulseView = ({ children, style, disabled }: any) => {
@@ -41,6 +42,7 @@ export default function MessageScreen() {
   const route = useRoute();
   const [guideStep, setGuideStep] = React.useState(0);
   const mode = (route.params as any)?.mode || 'practice';
+  const { isTestMode, recordMetrics, completeCurrentScam } = useTestMode();
 
   useEffect(() => {
     if (route.params) {
@@ -58,23 +60,32 @@ export default function MessageScreen() {
   }, [route.params]);
 
   const theme = isDarkMode ? darkTheme : lightTheme;
+  
+  // Check if current scenario is legitimate
+  const scenario = (route.params as any)?.scenario || '';
+  const isLegitScenario = scenario.startsWith('legit-');
 
   const handleLinkPress = (url: string) => {
-    // In guide mode, only allow link press if it's triggered programmatically (we can't easily distinguish, 
-    // so we'll rely on the fact that the user can't click the link if we disable the Text onPress, 
-    // but the GuideOverlay calls this function directly).
-    // Actually, GuideOverlay calls this function directly. 
-    // But the Text component also calls it.
-    // We should check if the call is coming from the UI interaction.
-    // Since we can't pass a flag easily without changing signature, 
-    // let's handle it in the renderMessageText.
+    // Record metrics for test mode when clicking a scam link
+    const isScamLink = url.includes('canadapost-pay.com') || 
+                       url.includes('hydro-quebec-refund.com') || 
+                       url.includes('td-security-update.com');
+    
+    if (isTestMode && isScamLink) {
+      recordMetrics({ clickedScamLink: true });
+    }
+    
+    // Record metrics for clicking legitimate links in test mode
+    if (isTestMode && isLegitScenario) {
+      recordMetrics({ clickedLegitLink: true, trustedCorrectly: true });
+    }
     
     if (url.includes('canadapost-pay.com')) {
-        navigation.navigate('CanadaPostPayment', { mode } as never);
+        (navigation as any).navigate('CanadaPostPayment', { mode });
     } else if (url.includes('hydro-quebec-refund.com')) {
-        navigation.navigate('HydroQuebec', { mode } as never);
+        (navigation as any).navigate('HydroQuebec', { mode });
     } else if (url.includes('td-security-update.com')) {
-        navigation.navigate('TDBank', { mode } as never);
+        (navigation as any).navigate('TDBank', { mode });
     } else {
         Linking.openURL(url);
     }
@@ -270,6 +281,50 @@ export default function MessageScreen() {
                 }}
                 position="center"
             />
+        )}
+        
+        {/* Test Mode Buttons */}
+        {isTestMode && (
+          <View style={styles.testButtonsContainer}>
+            {isLegitScenario ? (
+              <>
+                <TouchableOpacity 
+                  style={styles.testTrustButton}
+                  onPress={() => {
+                    recordMetrics({ trustedCorrectly: true });
+                    completeCurrentScam();
+                    navigation.navigate('TestMode' as never);
+                  }}
+                >
+                  <Ionicons name="shield-checkmark" size={20} color="white" />
+                  <Text style={styles.testCompleteButtonText}>This Looks Legitimate</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.testReportButton}
+                  onPress={() => {
+                    recordMetrics({ reportedAsScam: true });
+                    completeCurrentScam();
+                    navigation.navigate('TestMode' as never);
+                  }}
+                >
+                  <Ionicons name="warning" size={20} color="white" />
+                  <Text style={styles.testCompleteButtonText}>Report as Scam</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity 
+                style={styles.testCompleteButton}
+                onPress={() => {
+                  // User didn't click the scam link - that's good!
+                  completeCurrentScam();
+                  navigation.navigate('TestMode' as never);
+                }}
+              >
+                <MaterialIcons name="check-circle" size={20} color="white" />
+                <Text style={styles.testCompleteButtonText}>I'm Done - Continue Test</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
       </View>
     );
@@ -467,5 +522,53 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     padding: 2,
+  },
+  testCompleteButton: {
+    backgroundColor: 'rgba(5, 150, 105, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  testCompleteButtonText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  testButtonsContainer: {
+    position: 'absolute',
+    bottom: 90,
+    right: 16,
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  testTrustButton: {
+    backgroundColor: 'rgba(5, 150, 105, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  testReportButton: {
+    backgroundColor: 'rgba(220, 38, 38, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
 });

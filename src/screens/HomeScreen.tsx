@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons'; // Standard icon library in Expo
 type RootStackParamList = {
   Home: undefined;
   Phone: undefined;
+  ScamCall: { scenario: string; mode?: 'practice' | 'guide' };
   Gmail: { scenario?: string; mode?: 'practice' | 'guide' } | undefined;
   Message: { scenario?: string; mode?: 'practice' | 'guide'; initialConversationId?: string } | undefined;
   HydroQuebec: undefined;
@@ -58,6 +59,31 @@ export default function HomeScreen() {
     } else if (selectedScenario === 'loto-quebec') {
         // Loto-Quebec starts with a phishing email in Gmail
         navigation.navigate('Gmail', { scenario: 'loto-quebec', mode });
+    } else if (selectedScenario === 'grandchild-scam') {
+        // Grandchild scam - phone call scenario
+        navigation.navigate('ScamCall', { scenario: 'grandchild', mode });
+    } else if (selectedScenario === 'bank-security-scam') {
+        // Bank security scam - phone call scenario
+        navigation.navigate('ScamCall', { scenario: 'bankSecurity', mode });
+    } else if (selectedScenario === 'hydro-quebec-scam') {
+        // Hydro-Québec technician scam - phone call scenario
+        navigation.navigate('ScamCall', { scenario: 'hydroQuebec', mode });
+    }
+    // Legitimate scenarios - text messages
+    else if (selectedScenario === 'legit-canada-post') {
+        navigation.navigate('Message', { scenario: 'legit-canada-post', mode });
+    } else if (selectedScenario === 'legit-clinic') {
+        navigation.navigate('Message', { scenario: 'legit-clinic', mode });
+    } else if (selectedScenario === 'legit-saaq') {
+        navigation.navigate('Message', { scenario: 'legit-saaq', mode });
+    }
+    // Legitimate scenarios - emails
+    else if (selectedScenario === 'legit-google-security') {
+        navigation.navigate('Gmail', { scenario: 'legit-google-security', mode });
+    } else if (selectedScenario === 'legit-cra') {
+        navigation.navigate('Gmail', { scenario: 'legit-cra', mode });
+    } else if (selectedScenario === 'legit-desjardins') {
+        navigation.navigate('Gmail', { scenario: 'legit-desjardins', mode });
     }
   };
 
@@ -199,6 +225,84 @@ export default function HomeScreen() {
         onPress={() => handleScenarioPress('loto-quebec')} 
       />
 
+      <MenuCard 
+        title="Grandchild in Crisis" 
+        subtitle="Spot fake emergency calls from 'family'"
+        iconName="people" 
+        color="#8B5CF6" // Purple
+        onPress={() => handleScenarioPress('grandchild-scam')} 
+      />
+
+      <MenuCard 
+        title="Bank Security Alert" 
+        subtitle="Spot fake fraud prevention calls"
+        iconName="shield" 
+        color="#DC2626" // Red - bank/security color
+        onPress={() => handleScenarioPress('bank-security-scam')} 
+      />
+
+      <MenuCard 
+        title="Hydro-Québec Emergency" 
+        subtitle="Spot fake utility technician calls"
+        iconName="flash" 
+        color="#0EA5E9" // Sky blue - utility/electric color
+        onPress={() => handleScenarioPress('hydro-quebec-scam')} 
+      />
+
+      {/* Legitimate Scenarios Section */}
+      <Text style={styles.sectionHeader}>Legitimate Examples</Text>
+      <Text style={styles.sectionSubheader}>Learn to recognize real messages too</Text>
+
+      {/* Legitimate Text Messages */}
+      <MenuCard 
+        title="Canada Post Delivery" 
+        subtitle="Real delivery notification"
+        iconName="cube" 
+        color="#E31837" // Canada Post Red
+        onPress={() => handleScenarioPress('legit-canada-post')} 
+      />
+
+      <MenuCard 
+        title="Medical Clinic Reminder" 
+        subtitle="Real appointment reminder"
+        iconName="medkit" 
+        color="#3B82F6" // Blue - medical/healthcare
+        onPress={() => handleScenarioPress('legit-clinic')} 
+      />
+
+      <MenuCard 
+        title="SAAQ Notice" 
+        subtitle="Real driver's licence renewal"
+        iconName="car" 
+        color="#1D4ED8" // Quebec blue
+        onPress={() => handleScenarioPress('legit-saaq')} 
+      />
+
+      {/* Legitimate Emails */}
+      <MenuCard 
+        title="Google Security Code" 
+        subtitle="Real verification code email"
+        iconName="lock-closed" 
+        color="#4285f4" // Google blue
+        onPress={() => handleScenarioPress('legit-google-security')} 
+      />
+
+      <MenuCard 
+        title="CRA Account Update" 
+        subtitle="Real direct deposit notification"
+        iconName="document-text" 
+        color="#26374A" // CRA dark blue
+        onPress={() => handleScenarioPress('legit-cra')} 
+      />
+
+      <MenuCard 
+        title="Desjardins Activity Alert" 
+        subtitle="Real fraud prevention alert"
+        iconName="alert-circle" 
+        color="#00874e" // Desjardins green
+        onPress={() => handleScenarioPress('legit-desjardins')} 
+      />
+
     </ScrollView>
   );
 }
@@ -230,8 +334,13 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: '#1F2937', // Dark Grey
-    marginBottom: 15,
+    marginBottom: 8,
     marginTop: 10,
+  },
+  sectionSubheader: {
+    fontSize: 16,
+    color: '#6B7280', // Medium Grey
+    marginBottom: 15,
   },
   // Tip Box Styles
   tipContainer: {

@@ -1,66 +1,108 @@
 // Try to import local keys first, fall back to placeholder keys
-let apiKeys: { ANTHROPIC_API_KEY: string; ELEVENLABS_API_KEY: string; ELEVENLABS_VOICE_ID: string };
+let apiKeys: { XAI_API_KEY: string; ELEVENLABS_API_KEY: string; ELEVENLABS_VOICE_ID: string };
 try {
   apiKeys = require('../config/apiKeys.local');
 } catch {
   apiKeys = require('../config/apiKeys');
 }
-const { ANTHROPIC_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID } = apiKeys;
+const { XAI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID } = apiKeys;
 
 import * as FileSystem from 'expo-file-system';
 import { File, Paths } from 'expo-file-system';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { Buffer } from 'buffer';
+import { ToolDefinition, ScamScenario } from '../config/scamScenarios';
 
 // Track if audio mode has been initialized
-let audioModeInitialized = false;
-
-const initAudioMode = async () => {
-  if (!audioModeInitialized) {
-    await setAudioModeAsync({
-      playsInSilentMode: true,
-      allowsRecording: true,
-    });
-    audioModeInitialized = true;
-  }
+// Enable playback mode - audio plays through loudspeaker on iOS
+// This MUST be called before playing audio to ensure speaker output
+export const enablePlaybackMode = async () => {
+  console.log('Enabling playback mode (loudspeaker)...');
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    // allowsRecording: false tells iOS to use playback-only audio session
+    // which routes audio through the main speaker, not the earpiece
+    allowsRecording: false,
+    interruptionMode: 'doNotMix',
+  });
+  console.log('Playback mode enabled');
 };
 
-// Enable recording mode specifically
+// Enable recording mode specifically - call this before recording
+// This reconfigures the audio session to allow microphone input
 export const enableRecordingMode = async () => {
+  console.log('Enabling recording mode...');
   await setAudioModeAsync({
     playsInSilentMode: true,
     allowsRecording: true,
+    interruptionMode: 'doNotMix',
+    shouldRouteThroughEarpiece: false,
   });
+  // Longer delay to let iOS fully reconfigure the audio session
+  await new Promise(resolve => setTimeout(resolve, 200));
+  console.log('Recording mode enabled');
 };
 
-const SYSTEM_PROMPT = "You are a friendly person having a casual phone conversation. Be warm, personable, and conversational. Keep your responses short, under 2 sentences.";
+// Deprecated: Speaker toggle not needed since we always use loudspeaker
+export const setAudioOutput = async (_useSpeaker: boolean) => {
+  await enablePlaybackMode();
+};
 
-export const generateText = async (conversationHistory: { role: string, content: string }[]) => {
+const DEFAULT_SYSTEM_PROMPT = "You are a friendly person having a casual phone conversation. Be warm, personable, and conversational. Keep your responses short, under 2 sentences.";
+
+// Response type for generateText with function calling support
+export interface GenerateTextResult {
+  text: string;
+  toolCalls?: {
+    id: string;
+    name: string;
+    arguments: Record<string, any>;
+  }[];
+}
+
+export const generateText = async (
+  conversationHistory: { role: string, content: string }[],
+  scenario?: ScamScenario
+): Promise<GenerateTextResult> => {
   try {
     // Filter out empty messages to avoid API errors
     const filteredHistory = conversationHistory.filter(msg => msg.content && msg.content.trim() !== '');
     
     if (filteredHistory.length === 0) {
-      console.log('No valid messages to send to Anthropic, returning default response');
-      return "I didn't catch that. Could you say that again?";
+      console.log('No valid messages to send to Grok, returning default response');
+      return { text: "I didn't catch that. Could you say that again?" };
     }
     
-    console.log('Calling Anthropic API with history:', JSON.stringify(filteredHistory));
+    // Use scenario-specific system prompt if available
+    const systemPrompt = scenario?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
     
-    const requestBody = {
-      model: 'claude-3-haiku-20240307',
-      max_tokens: 150,
-      system: SYSTEM_PROMPT,
-      messages: filteredHistory,
+    // Build messages array with system prompt first, then conversation
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...filteredHistory
+    ];
+    
+    console.log('Calling xAI Grok API with scenario:', scenario?.id || 'default');
+    
+    // Build request body with optional tools
+    const requestBody: any = {
+      model: 'grok-3-fast',
+      max_tokens: 250,
+      messages: messages,
     };
     
-    console.log('Request body:', JSON.stringify(requestBody));
+    // Add tools if scenario defines them
+    if (scenario?.tools && scenario.tools.length > 0) {
+      requestBody.tools = scenario.tools;
+      requestBody.tool_choice = 'auto'; // Let the model decide when to call tools
+    }
     
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    console.log('Request body:', JSON.stringify(requestBody, null, 2));
+    
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${XAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
@@ -69,23 +111,76 @@ export const generateText = async (conversationHistory: { role: string, content:
     console.log('Response status:', response.status);
     
     const data = await response.json();
-    console.log('Response data:', JSON.stringify(data));
+    console.log('Response data:', JSON.stringify(data, null, 2));
     
     if (data.error) {
-        console.error('Anthropic API Error:', data.error);
-        throw new Error(data.error.message);
+        console.error('Grok API Error:', data.error);
+        throw new Error(data.error.message || JSON.stringify(data.error));
     }
-    return data.content[0].text;
+    
+    const message = data.choices[0].message;
+    
+    // Check for tool calls
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      console.log('Tool calls detected:', message.tool_calls);
+      
+      const toolCalls = message.tool_calls.map((tc: any) => ({
+        id: tc.id,
+        name: tc.function.name,
+        arguments: JSON.parse(tc.function.arguments || '{}')
+      }));
+      
+      // Return both the text (if any) and the tool calls
+      return {
+        text: message.content || '',
+        toolCalls
+      };
+    }
+    
+    // xAI uses OpenAI-compatible response format: choices[0].message.content
+    return { text: message.content || '' };
   } catch (error) {
     console.error('Error generating text:', error);
     throw error;
   }
 };
 
-export const generateAudio = async (text: string) => {
+/**
+ * Removes voice effect annotations like *sniffling*, *crying*, *laughs*, etc.
+ * These are often included by LLMs but read literally by TTS engines.
+ */
+const sanitizeTextForTTS = (text: string): string => {
+  // Remove text between asterisks (e.g., *sniffling*, *crying*, *laughs nervously*)
+  let sanitized = text.replace(/\*[^*]+\*/g, '');
+  
+  // Remove text between parentheses that look like stage directions (e.g., (sobs), (whispers))
+  sanitized = sanitized.replace(/\([^)]*(?:sobs?|cries?|crying|sniff|laugh|giggles?|whispers?|sighs?|gasps?|pauses?|clears throat)[^)]*\)/gi, '');
+  
+  // Clean up extra whitespace left behind
+  sanitized = sanitized.replace(/\s+/g, ' ').trim();
+  
+  return sanitized;
+};
+
+export const generateAudio = async (text: string, voiceId?: string) => {
   try {
+    // Sanitize text to remove voice effects before sending to TTS
+    const cleanText = sanitizeTextForTTS(text);
+    console.log('Original text:', text);
+    console.log('Sanitized for TTS:', cleanText);
+    
+    // Use provided voiceId or fall back to default
+    const selectedVoiceId = voiceId || ELEVENLABS_VOICE_ID;
+    console.log('Using voice ID:', selectedVoiceId);
+    
+    if (!cleanText) {
+      // If sanitizing removed all text, return empty
+      console.log('No text left after sanitization, skipping TTS');
+      return '';
+    }
+    
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}?output_format=mp3_44100_128`,
       {
         method: 'POST',
         headers: {
@@ -93,7 +188,7 @@ export const generateAudio = async (text: string) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text,
+          text: cleanText,
           model_id: 'eleven_flash_v2_5',
           voice_settings: { stability: 0.5, similarity_boost: 0.75 },
         }),
@@ -117,8 +212,8 @@ export const generateAudio = async (text: string) => {
 
 export const playAudio = async (base64String: string): Promise<{ stop: () => void; _player: any }> => {
   try {
-    // Initialize audio mode if needed
-    await initAudioMode();
+    // Always ensure playback mode is set for loudspeaker output
+    await enablePlaybackMode();
     
     // Create a File instance in the cache directory
     const audioFile = new File(Paths.cache, `speech_${Date.now()}.mp3`);
@@ -154,7 +249,9 @@ export const playAudio = async (base64String: string): Promise<{ stop: () => voi
 // Play a ringtone from assets
 export const playRingtone = async (ringtoneAsset: any): Promise<{ stop: () => void; _player: any }> => {
   try {
-    await initAudioMode();
+    // Don't await - audio mode should already be set by the screen on mount
+    // This avoids delay in starting the ringtone
+    enablePlaybackMode();
     
     const player = createAudioPlayer(ringtoneAsset, { updateInterval: 100 });
     player.loop = true; // Loop the ringtone

@@ -40,11 +40,11 @@ npx expo start --web
 
 Environment / API keys
 
-The app expects ElevenLabs and Anthropic API keys. Create a local config file at `src/config/apiKeys.local.js` (not committed) with the following shape:
+The app expects ElevenLabs and xAI (Grok) API keys. Create a local config file at `src/config/apiKeys.local.js` (not committed) with the following shape:
 
 ```js
 module.exports = {
-  ANTHROPIC_API_KEY: 'your-anthropic-key',
+  XAI_API_KEY: 'your-xai-grok-key',
   ELEVENLABS_API_KEY: 'your-elevenlabs-key',
   ELEVENLABS_VOICE_ID: 'your-elevenlabs-voice-id'
 };

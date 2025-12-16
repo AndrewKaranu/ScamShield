@@ -98,10 +98,104 @@ This email was sent to you because you are a valued customer. To unsubscribe, cl
   { id: '4', sender: 'Amazon', subject: 'Your order has shipped', preview: 'Your package is on the way. Track your shipment...', time: 'Oct 20', avatarColor: '#ff9900', avatarText: 'A', unread: false },
 ];
 
+// ============================================
+// LEGITIMATE (NON-SCAM) EMAIL SCENARIOS
+// ============================================
+
+const legitGoogleSecurityEmails: Email[] = [
+  { 
+    id: 'legit-google-security', 
+    sender: 'Google', 
+    senderEmail: 'no-reply@accounts.google.com',
+    subject: 'Security alert: Your verification code', 
+    preview: 'Your Google verification code is: 843921', 
+    body: `Your Google verification code is: 843921
+
+If you did not request this code, someone may be attempting to access your account.
+
+Sign in to review your account:
+https://myaccount.google.com
+
+This email was automatically generated — please do not reply.`,
+    time: '11:30 AM', 
+    avatarColor: '#4285f4', 
+    avatarText: 'G', 
+    unread: true, 
+    isNew: true,
+    isScam: false,
+  },
+  { id: '1', sender: 'Google Community Team', subject: 'Finish setting up your new Google Account', preview: 'Hi Andre, Welcome to Google. Your new account comes with...', time: '10:42 AM', avatarColor: '#4285f4', avatarText: 'G', unread: false },
+  { id: '4', sender: 'Amazon', subject: 'Your order has shipped', preview: 'Your package is on the way. Track your shipment...', time: 'Oct 20', avatarColor: '#ff9900', avatarText: 'A', unread: false },
+];
+
+const legitCraEmails: Email[] = [
+  { 
+    id: 'legit-cra', 
+    sender: 'Canada Revenue Agency', 
+    senderEmail: 'notification@cra-arc.gc.ca',
+    subject: 'Canada Revenue Agency: A change has been made to your account', 
+    preview: 'A recent update was made to your direct deposit information.', 
+    body: `Dear Client,
+
+A recent update was made to your direct deposit information.
+
+If you did not make this change, please sign in to your CRA account immediately to review your file:
+
+https://www.canada.ca/en/revenue-agency/services/e-services
+
+This is an automated notification.
+
+Canada Revenue Agency`,
+    time: '9:45 AM', 
+    avatarColor: '#26374A', 
+    avatarText: 'CRA', 
+    unread: true, 
+    isNew: true,
+    isScam: false,
+  },
+  { id: '1', sender: 'Google Community Team', subject: 'Finish setting up your new Google Account', preview: 'Hi Andre, Welcome to Google. Your new account comes with...', time: '10:42 AM', avatarColor: '#4285f4', avatarText: 'G', unread: false },
+  { id: '5', sender: 'Netflix', subject: 'New login to your account', preview: 'We noticed a new login to your account from...', time: 'Oct 15', avatarColor: '#e50914', avatarText: 'N', unread: false },
+];
+
+const legitDesjardinsEmails: Email[] = [
+  { 
+    id: 'legit-desjardins', 
+    sender: 'Desjardins', 
+    senderEmail: 'alerts@desjardins.com',
+    subject: 'Important: Verify recent activity on your Desjardins account', 
+    preview: 'We detected a potentially unusual transaction on your account ending in …4821.', 
+    body: `Hello,
+
+We detected a potentially unusual transaction on your account ending in …4821.
+
+If you don't recognize the transaction, kindly call the Fraud Prevention team at 1-800-224-7737.
+
+If you recognize the transaction, no further action is required.
+
+Thank you,
+Desjardins Fraud Prevention Services`,
+    time: '8:15 AM', 
+    avatarColor: '#00874e', 
+    avatarText: 'D', 
+    unread: true, 
+    isNew: true,
+    isScam: false,
+  },
+  { id: '3', sender: 'LinkedIn', subject: 'You appeared in 5 searches this week', preview: 'See who is looking for you on LinkedIn.', time: 'Oct 24', avatarColor: '#0077b5', avatarText: 'in', unread: false },
+  { id: '4', sender: 'Amazon', subject: 'Your order has shipped', preview: 'Your package is on the way. Track your shipment...', time: 'Oct 20', avatarColor: '#ff9900', avatarText: 'A', unread: false },
+];
+
 const getEmailsForScenario = (scenario: string): Email[] => {
   switch (scenario) {
     case 'loto-quebec':
       return lotoQuebecEmails;
+    // Legitimate email scenarios
+    case 'legit-google-security':
+      return legitGoogleSecurityEmails;
+    case 'legit-cra':
+      return legitCraEmails;
+    case 'legit-desjardins':
+      return legitDesjardinsEmails;
     default:
       return defaultEmails;
   }

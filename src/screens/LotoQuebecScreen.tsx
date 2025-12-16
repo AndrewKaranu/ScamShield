@@ -4,6 +4,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SvgXml } from 'react-native-svg';
 import { GuideOverlay } from '../components/GuideOverlay';
+import { useTestMode } from '../context/TestModeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -96,6 +97,16 @@ export default function LotoQuebecScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   // Guide step starts at 3 because steps 0-2 are in GmailScreen
   const [guideStep, setGuideStep] = useState(mode === 'guide' ? 3 : 1);
+  const { isTestMode, recordMetrics, completeCurrentScam } = useTestMode();
+  const [hasRecordedMetrics, setHasRecordedMetrics] = useState(false);
+
+  // Record that user clicked scam link when they arrive at this screen in test mode
+  useEffect(() => {
+    if (isTestMode && !hasRecordedMetrics) {
+      recordMetrics({ clickedScamLink: true });
+      setHasRecordedMetrics(true);
+    }
+  }, [isTestMode, hasRecordedMetrics]);
 
   const handleLoginNavigation = () => {
     setShowWinnerPopup(false);
@@ -107,6 +118,9 @@ export default function LotoQuebecScreen() {
 
   const handleLoginSubmit = () => {
     if (email && password) {
+        if (isTestMode) {
+          recordMetrics({ enteredCredentials: true, sharedSensitiveInfo: true });
+        }
         setShowScamAlert(true);
     } else {
         Alert.alert("Error", "Please enter your email and password");
@@ -115,7 +129,17 @@ export default function LotoQuebecScreen() {
 
   const handleFinishSimulation = () => {
     setShowScamAlert(false);
-    navigation.navigate('Home' as never);
+    if (isTestMode) {
+      completeCurrentScam();
+      navigation.navigate('TestMode' as never);
+    } else {
+      navigation.navigate('Home' as never);
+    }
+  };
+
+  const handleContinueTest = () => {
+    completeCurrentScam();
+    navigation.navigate('TestMode' as never);
   };
 
   const renderHeader = () => (
@@ -403,6 +427,14 @@ export default function LotoQuebecScreen() {
                 </View>
             </View>
         </Modal>
+
+        {/* Test Mode Continue Button */}
+        {isTestMode && (
+          <TouchableOpacity style={styles.testCompleteButton} onPress={handleContinueTest}>
+            <Ionicons name="checkmark-circle" size={20} color="white" />
+            <Text style={styles.testCompleteButtonText}>I'm Done - Continue Test</Text>
+          </TouchableOpacity>
+        )}
 
     </SafeAreaView>
   );
@@ -780,5 +812,25 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  testCompleteButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 16,
+    backgroundColor: 'rgba(5, 150, 105, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  testCompleteButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

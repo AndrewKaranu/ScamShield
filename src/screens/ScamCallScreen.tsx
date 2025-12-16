@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { useMachine } from '@xstate/react';
 import { phoneMachine } from '../machines/phoneMachine';
 import { playAudio, playRingtone, enableRecordingMode, enablePlaybackMode } from '../services/aiService';
@@ -7,8 +7,21 @@ import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync } 
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withRepeat } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScamType } from '../config/scamScenarios';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { useTestMode } from '../context/TestModeContext';
 
 const { width } = Dimensions.get('window');
+
+type RootStackParamList = {
+  ScamCall: { scenario: ScamType; mode?: 'practice' | 'guide' | 'test' };
+  Home: undefined;
+  TestMode: undefined;
+  TestResults: undefined;
+};
+
+type ScamCallRouteProp = RouteProp<RootStackParamList, 'ScamCall'>;
 
 // Shake Button Component
 const ShakeButton = ({ onPress, children, style }: any) => {
@@ -38,12 +51,50 @@ const ShakeButton = ({ onPress, children, style }: any) => {
   );
 };
 
-export default function PhoneScreen() {
+export default function ScamCallScreen() {
+  const route = useRoute<ScamCallRouteProp>();
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
+  const { scenario: scenarioType, mode = 'practice' } = route.params;
+  const { isTestMode, recordMetrics, completeCurrentScam } = useTestMode();
+  
   const [state, send] = useMachine(phoneMachine);
   const [currentPlayer, setCurrentPlayer] = useState<any>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [showScamFeedback, setShowScamFeedback] = useState(false);
+  const [hasRecordedOutcome, setHasRecordedOutcome] = useState(false);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const ringtonePlayerRef = useRef<any>(null);
+
+  // Initialize with the specified scam scenario on mount
+  useEffect(() => {
+    send({ type: 'SET_SCENARIO', scenarioType });
+  }, [scenarioType]);
+
+  // Watch for scam outcome changes
+  useEffect(() => {
+    if (state.context.scamOutcome === 'victim_failed' || state.context.scamOutcome === 'victim_suspicious') {
+      // Record metrics for test mode
+      if (isTestMode && !hasRecordedOutcome) {
+        setHasRecordedOutcome(true);
+        recordMetrics({
+          sharedSensitiveInfo: state.context.scamOutcome === 'victim_failed',
+          showedSuspicion: state.context.scamOutcome === 'victim_suspicious',
+          callDuration: state.context.duration,
+        });
+      }
+      
+      // Show feedback after a brief delay
+      const timer = setTimeout(() => {
+        setShowScamFeedback(true);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.context.scamOutcome]);
+
+  // Get caller display info from scenario or use defaults
+  const callerName = state.context.scenario?.callerName || 'Unknown Caller';
+  const callerNumber = state.context.scenario?.callerNumber || '+1 (514) 555-0123';
+  const scenarioName = state.context.scenario?.name || 'Phone Scam';
 
   // Function to stop ringtone
   const stopRingtone = () => {
@@ -96,13 +147,11 @@ export default function PhoneScreen() {
     let mounted = true;
     
     if (isIncoming) {
-      // Play ringtone - make sure you have added the ringtone file
       playRingtone(require('../../assets/ringtone.mp3'))
         .then(result => {
           if (mounted) {
             ringtonePlayerRef.current = result;
           } else {
-            // Component unmounted or state changed, stop immediately
             result.stop();
           }
         })
@@ -110,7 +159,6 @@ export default function PhoneScreen() {
           console.log('No ringtone file found or error playing:', err);
         });
     } else {
-      // Stop ringtone when leaving incoming state
       stopRingtone();
     }
     
@@ -133,43 +181,75 @@ export default function PhoneScreen() {
 
   // Handle audio playback for AI responses
   useEffect(() => {
+    let checkInterval: NodeJS.Timeout | null = null;
+    let safetyTimeout: NodeJS.Timeout | null = null;
+    let startTimeout: NodeJS.Timeout | null = null;
+    let playerRef: any = null;
+    let isCancelled = false;
+    
     if (state.context.lastAudio) {
-        console.log('Starting audio playback...');
+        console.log('Starting audio playback for state:', JSON.stringify(state.value), 'agentState:', state.context.agentState);
+        
         playAudio(state.context.lastAudio).then(result => {
-            const player = (result as any)._player;
-            setCurrentPlayer(player);
-            console.log('Player set, isLoaded:', player.isLoaded, 'playing:', player.playing);
+            if (isCancelled) {
+                // Component unmounted or lastAudio changed, clean up
+                (result as any)._player?.remove();
+                return;
+            }
             
-            // Give a small delay for player to start, then poll for completion
-            setTimeout(() => {
-                const checkInterval = setInterval(() => {
-                    console.log('Checking player status - playing:', player.playing, 'isLoaded:', player.isLoaded);
-                    // Check if finished: not playing AND either loaded or duration elapsed
-                    if (!player.playing && player.isLoaded) {
-                        clearInterval(checkInterval);
-                        console.log('Audio finished, cleaning up');
+            playerRef = (result as any)._player;
+            setCurrentPlayer(playerRef);
+            console.log('Player set, isLoaded:', playerRef.isLoaded, 'playing:', playerRef.playing);
+            
+            // Start checking after a small delay to let playback begin
+            startTimeout = setTimeout(() => {
+                if (isCancelled) return;
+                
+                checkInterval = setInterval(() => {
+                    if (isCancelled || !playerRef) return;
+                    
+                    console.log('Checking player status - playing:', playerRef.playing, 'isLoaded:', playerRef.isLoaded);
+                    if (!playerRef.playing && playerRef.isLoaded) {
+                        if (checkInterval) clearInterval(checkInterval);
+                        if (safetyTimeout) clearTimeout(safetyTimeout);
+                        console.log('Audio finished, sending AUDIO_FINISHED');
                         send({ type: 'AUDIO_FINISHED' });
                         setCurrentPlayer(null);
-                        player.remove();
+                        playerRef.remove();
+                        playerRef = null;
                     }
                 }, 200);
                 
-                // Safety timeout - if audio doesn't finish in 30 seconds, force finish
-                setTimeout(() => {
-                    clearInterval(checkInterval);
-                    if (currentPlayer) {
+                // Safety timeout - force finish after 30 seconds
+                safetyTimeout = setTimeout(() => {
+                    if (isCancelled) return;
+                    if (checkInterval) clearInterval(checkInterval);
+                    if (playerRef) {
                         console.log('Safety timeout reached, forcing audio finish');
                         send({ type: 'AUDIO_FINISHED' });
                         setCurrentPlayer(null);
-                        player.remove();
+                        playerRef.remove();
+                        playerRef = null;
                     }
                 }, 30000);
             }, 500);
         }).catch(err => {
             console.error('Audio playback error:', err);
-            send({ type: 'AUDIO_FINISHED' });
+            if (!isCancelled) {
+                send({ type: 'AUDIO_FINISHED' });
+            }
         });
     }
+    
+    // Cleanup function - runs when lastAudio changes or component unmounts
+    return () => {
+        console.log('Audio useEffect cleanup');
+        isCancelled = true;
+        if (startTimeout) clearTimeout(startTimeout);
+        if (checkInterval) clearInterval(checkInterval);
+        if (safetyTimeout) clearTimeout(safetyTimeout);
+        // Don't remove playerRef here - let it finish playing if still playing
+    };
   }, [state.context.lastAudio]);
 
   const startRecording = async () => {
@@ -180,7 +260,6 @@ export default function PhoneScreen() {
     }
     
     try {
-      // Check permission first
       const permResult = await requestRecordingPermissionsAsync();
       if (!permResult.granted) {
         console.error('Microphone permission denied');
@@ -243,9 +322,13 @@ export default function PhoneScreen() {
 
   const renderIncoming = () => (
     <View style={styles.screen}>
+      <View style={styles.scenarioHeader}>
+        <Text style={styles.scenarioLabel}>SCAM SIMULATION</Text>
+        <Text style={styles.scenarioName}>{scenarioName}</Text>
+      </View>
       <View style={styles.callerInfo}>
-        <Text style={styles.callerName}>Tech Maniac</Text>
-        <Text style={styles.callerLabel}>mobile</Text>
+        <Text style={styles.callerName}>{callerName}</Text>
+        <Text style={styles.callerLabel}>{callerNumber}</Text>
       </View>
       <View style={styles.callActions}>
         <View style={styles.actionButtonContainer}>
@@ -271,7 +354,7 @@ export default function PhoneScreen() {
     >
     <View style={styles.screen}>
       <View style={styles.callerInfo}>
-        <Text style={styles.callerName}>Tech Maniac</Text>
+        <Text style={styles.callerName}>{callerName}</Text>
         <Text style={styles.timer}>{formatTime(state.context.duration)}</Text>
         {state.context.agentState !== 'idle' && state.context.agentState !== 'listening' && (
             <Text style={styles.statusText}>
@@ -336,7 +419,7 @@ export default function PhoneScreen() {
         </View>
       </View>
 
-      {/* Conversation Input - Mic Button */}
+      {/* Mic Button */}
       <View style={styles.micContainer}>
         <TouchableOpacity 
             onPressIn={startRecording}
@@ -410,15 +493,126 @@ export default function PhoneScreen() {
   const renderEnded = () => (
     <View style={styles.screen}>
       <Text style={styles.endedTitle}>Call Ended</Text>
-      <TouchableOpacity onPress={() => send({ type: 'RESTART' })} style={styles.restartBtn}>
-        <Text style={styles.restartText}>Restart Simulation</Text>
+      {state.context.scamOutcome && state.context.scamOutcome !== 'ongoing' && (
+        <View style={styles.feedbackContainer}>
+          {state.context.scamOutcome === 'victim_failed' && (
+            <>
+              <MaterialIcons name="warning" size={48} color="#FF3B30" />
+              <Text style={styles.feedbackTitle}>⚠️ You fell for the scam!</Text>
+              <Text style={styles.feedbackText}>
+                You provided sensitive information to the scammer. In a real scenario, this could lead to financial loss or identity theft.
+              </Text>
+              <View style={styles.tipsContainer}>
+                <Text style={styles.tipsTitle}>Red Flags to Watch For:</Text>
+                <Text style={styles.tipItem}>• Unexpected calls from "family" in crisis</Text>
+                <Text style={styles.tipItem}>• Requests for secrecy ("Don't tell anyone")</Text>
+                <Text style={styles.tipItem}>• Pressure to act immediately</Text>
+                <Text style={styles.tipItem}>• Requests for gift cards or wire transfers</Text>
+              </View>
+            </>
+          )}
+          {state.context.scamOutcome === 'victim_suspicious' && (
+            <>
+              <MaterialIcons name="check-circle" size={48} color="#34C759" />
+              <Text style={styles.feedbackTitleSuccess}>✅ Great job staying alert!</Text>
+              <Text style={styles.feedbackText}>
+                You showed healthy skepticism. Always verify a caller's identity by calling them back on a known number.
+              </Text>
+            </>
+          )}
+        </View>
+      )}
+      {(!state.context.scamOutcome || state.context.scamOutcome === 'ongoing') && (
+        <Text style={styles.feedbackText}>The call ended without a clear outcome.</Text>
+      )}
+      <TouchableOpacity onPress={() => {
+        setShowScamFeedback(false);
+        setHasRecordedOutcome(false);
+        send({ type: 'RESTART' });
+      }} style={styles.restartBtn}>
+        <Text style={styles.restartText}>Try Again</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => {
+        if (isTestMode) {
+          // Record final metrics and complete the scam
+          if (!hasRecordedOutcome) {
+            recordMetrics({
+              endedCallEarly: state.context.scamOutcome === 'ongoing' || !state.context.scamOutcome,
+              callDuration: state.context.duration,
+            });
+          }
+          completeCurrentScam();
+          navigation.navigate('TestMode');
+        } else {
+          navigation.goBack();
+        }
+      }} style={styles.homeBtn}>
+        <Text style={styles.homeBtnText}>{isTestMode ? 'Continue Test' : 'Back to Home'}</Text>
       </TouchableOpacity>
     </View>
   );
 
+  // Scam Feedback Modal (shown during call)
+  const renderScamFeedbackModal = () => (
+    <Modal
+      visible={showScamFeedback}
+      transparent
+      animationType="fade"
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          {state.context.scamOutcome === 'victim_failed' && (
+            <>
+              <MaterialIcons name="error" size={64} color="#FF3B30" />
+              <Text style={styles.modalTitle}>Scam Alert!</Text>
+              <Text style={styles.modalText}>
+                You just provided information that a scammer could use against you.
+              </Text>
+              <Text style={styles.modalTextSmall}>
+                {state.context.toolCalls.length > 0 && 
+                  `Detected: ${state.context.toolCalls[state.context.toolCalls.length - 1]?.arguments?.info_type?.replace(/_/g, ' ')}`
+                }
+              </Text>
+            </>
+          )}
+          {state.context.scamOutcome === 'victim_suspicious' && (
+            <>
+              <MaterialIcons name="shield" size={64} color="#34C759" />
+              <Text style={styles.modalTitleSuccess}>Great Instincts!</Text>
+              <Text style={styles.modalText}>
+                You showed signs of recognizing this scam. This is exactly what you should do!
+              </Text>
+            </>
+          )}
+          <TouchableOpacity 
+            style={styles.modalButton} 
+            onPress={() => {
+              setShowScamFeedback(false);
+              handleEndCall();
+            }}
+          >
+            <Text style={styles.modalButtonText}>End Call & See Results</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.modalButtonSecondary} 
+            onPress={() => setShowScamFeedback(false)}
+          >
+            <Text style={styles.modalButtonTextSecondary}>Continue Call</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
+      {renderScamFeedbackModal()}
       {state.matches('incoming') && renderIncoming()}
+      {state.matches({ active: 'speakingOpening' }) && renderActive()}
+      {state.matches({ active: 'speakingOpeningAudio' }) && renderActive()}
+      {state.matches({ active: 'connectingToAgent' }) && renderActive()}
+      {state.matches({ active: 'generatingAgentGreeting' }) && renderActive()}
+      {state.matches({ active: 'speakingAgentGreeting' }) && renderActive()}
       {state.matches({ active: 'main' }) && renderActive()}
       {state.matches({ active: 'recording' }) && renderActive()}
       {state.matches({ active: 'transcribing' }) && renderActive()}
@@ -433,7 +627,7 @@ export default function PhoneScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000', // Dark background like iOS call
+    backgroundColor: '#000',
   },
   screen: {
     flex: 1,
@@ -441,9 +635,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 40,
   },
+  scenarioHeader: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  scenarioLabel: {
+    color: '#FF9500',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  scenarioName: {
+    color: '#FF9500',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 4,
+  },
   callerInfo: {
     alignItems: 'center',
-    marginTop: 40,
+    marginTop: 20,
   },
   callerName: {
     color: 'white',
@@ -576,17 +786,27 @@ const styles = StyleSheet.create({
   endedTitle: {
     color: 'white',
     fontSize: 34,
-    marginTop: 100,
+    marginTop: 40,
   },
   restartBtn: {
     backgroundColor: '#007AFF',
     padding: 15,
     borderRadius: 10,
-    marginBottom: 100,
+    marginBottom: 15,
+    width: '80%',
+    alignItems: 'center',
   },
   restartText: {
     color: 'white',
     fontSize: 18,
+  },
+  homeBtn: {
+    padding: 15,
+    marginBottom: 40,
+  },
+  homeBtnText: {
+    color: '#007AFF',
+    fontSize: 16,
   },
   statusText: {
     color: '#FFD700',
@@ -618,5 +838,119 @@ const styles = StyleSheet.create({
   micHint: {
     color: '#999',
     fontSize: 14,
+  },
+  // Feedback Styles
+  feedbackContainer: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 20,
+    marginVertical: 20,
+    alignItems: 'center',
+  },
+  feedbackTitle: {
+    color: '#FF3B30',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 12,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  feedbackTitleSuccess: {
+    color: '#34C759',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 12,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  feedbackText: {
+    color: 'white',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  tipsContainer: {
+    marginTop: 20,
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  tipsTitle: {
+    color: '#FF9500',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  tipItem: {
+    color: '#CCC',
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1C1C1E',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+  },
+  modalTitle: {
+    color: '#FF3B30',
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  modalTitleSuccess: {
+    color: '#34C759',
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  modalText: {
+    color: 'white',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  modalTextSmall: {
+    color: '#999',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButton: {
+    backgroundColor: '#FF3B30',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 12,
+  },
+  modalButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalButtonSecondary: {
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+  },
+  modalButtonTextSecondary: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

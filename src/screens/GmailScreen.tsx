@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Modal, TextInput, Dimensions, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Modal, TextInput, Dimensions, ScrollView, Linking } from 'react-native';
 import { useMachine } from '@xstate/react';
 import { mailMachine, Email } from '../machines/mailMachine';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -35,6 +35,8 @@ const PulseView = ({ children, style, id }: any) => {
   );
 };
 
+import { useTestMode } from '../context/TestModeContext';
+
 export default function GmailScreen() {
   const [state, send] = useMachine(mailMachine);
   const { emails, selectedEmails, currentEmailId, isSideMenuOpen, isAccountModalOpen, snackbarMessage } = state.context;
@@ -43,6 +45,10 @@ export default function GmailScreen() {
   const [guideStep, setGuideStep] = useState(0);
   const mode = (route.params as any)?.mode || 'practice';
   const scenario = (route.params as any)?.scenario;
+  const { isTestMode, recordMetrics, completeCurrentScam } = useTestMode();
+  
+  // Check if current scenario is legitimate
+  const isLegitScenario = scenario?.startsWith('legit-');
 
   // Load scenario on mount
   useEffect(() => {
@@ -52,9 +58,65 @@ export default function GmailScreen() {
   }, [scenario]);
 
   const handleScamLink = (scamType: string) => {
+    // Record metrics for test mode
+    if (isTestMode) {
+      recordMetrics({ clickedScamLink: true });
+    }
+    
     if (scamType === 'loto-quebec') {
       navigation.navigate('LotoQuebec', { mode });
     }
+  };
+  
+  const handleLegitLink = () => {
+    // Record metrics for clicking legitimate links in test mode
+    if (isTestMode && isLegitScenario) {
+      recordMetrics({ clickedLegitLink: true, trustedCorrectly: true });
+    }
+  };
+
+  // Render email body with clickable links
+  const renderEmailBody = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+
+    return (
+      <Text style={styles.detailBody}>
+        {parts.map((part, index) => {
+          if (part.match(urlRegex)) {
+            return (
+              <Text
+                key={index}
+                style={{ color: '#1a73e8', textDecorationLine: 'underline' }}
+                onPress={() => {
+                  if (mode !== 'guide') {
+                    // Check if it's a scam link that should navigate in-app
+                    if (part.includes('loto-quebec')) {
+                      handleScamLink('loto-quebec');
+                    } else if (part.includes('hydro-quebec')) {
+                      // Handle hydro-quebec links if any
+                      navigation.navigate('HydroQuebec', { mode: isTestMode ? 'test' : mode });
+                    } else if (part.includes('canada') && part.includes('post')) {
+                      // Handle canada post links if any  
+                      navigation.navigate('CanadaPostPayment', { mode: isTestMode ? 'test' : mode });
+                    } else if (part.includes('td') && (part.includes('bank') || part.includes('security'))) {
+                      // Handle TD bank links if any
+                      navigation.navigate('TDBank', { mode: isTestMode ? 'test' : mode });
+                    } else {
+                      // For legitimate links, open in browser
+                      Linking.openURL(part);
+                    }
+                  }
+                }}
+              >
+                {part}
+              </Text>
+            );
+          }
+          return part;
+        })}
+      </Text>
+    );
   };
 
   // Snackbar Auto-Dismiss
@@ -216,9 +278,7 @@ export default function GmailScreen() {
           </View>
 
           {/* Email Body */}
-          <Text style={styles.detailBody}>
-            {email.body || email.preview}
-          </Text>
+          {renderEmailBody(email.body || email.preview)}
 
           {/* Scam CTA Button */}
           {email.isScam && (
@@ -270,6 +330,49 @@ export default function GmailScreen() {
             }}
             position="center"
           />
+        )}
+        
+        {/* Test Mode Buttons */}
+        {isTestMode && (
+          <View style={styles.testButtonsContainer}>
+            {isLegitScenario ? (
+              <>
+                <TouchableOpacity 
+                  style={styles.testTrustButton}
+                  onPress={() => {
+                    recordMetrics({ trustedCorrectly: true });
+                    completeCurrentScam();
+                    navigation.navigate('TestMode' as never);
+                  }}
+                >
+                  <Ionicons name="shield-checkmark" size={20} color="white" />
+                  <Text style={styles.testCompleteButtonText}>This Looks Legitimate</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.testReportButton}
+                  onPress={() => {
+                    recordMetrics({ reportedAsScam: true });
+                    completeCurrentScam();
+                    navigation.navigate('TestMode' as never);
+                  }}
+                >
+                  <Ionicons name="warning" size={20} color="white" />
+                  <Text style={styles.testCompleteButtonText}>Report as Scam</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity 
+                style={styles.testCompleteButton}
+                onPress={() => {
+                  completeCurrentScam();
+                  navigation.navigate('TestMode' as never);
+                }}
+              >
+                <MaterialIcons name="check-circle" size={20} color="white" />
+                <Text style={styles.testCompleteButtonText}>I'm Done - Continue Test</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
       </View>
     );
@@ -777,5 +880,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  testCompleteButton: {
+    backgroundColor: 'rgba(5, 150, 105, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  testCompleteButtonText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  testButtonsContainer: {
+    position: 'absolute',
+    bottom: 20,
+    right: 16,
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  testTrustButton: {
+    backgroundColor: 'rgba(5, 150, 105, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  testReportButton: {
+    backgroundColor: 'rgba(220, 38, 38, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
 });
