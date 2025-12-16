@@ -57,11 +57,17 @@ Realistic phishing page simulations:
 
 ## Quick Start
 
-### Prerequisites
+### Option 1: Try It Without Setup
+
+Don't want to run the code yourself? Email **andrewkaranu03@gmail.com** and I'll start the server and send you a link to open directly in Expo Go.
+
+### Option 2: Run It Yourself
+
+#### Prerequisites
 - Node.js (14+)
 - Expo Go app on your mobile device
 
-### Install and Run
+#### Install and Run
 
 ```bash
 cd ScamPreventionApp
@@ -71,7 +77,7 @@ npx expo start
 
 Scan the QR code with Expo Go to run on your phone.
 
-### API Keys
+#### API Keys
 
 Create `src/config/apiKeys.local.js`:
 
