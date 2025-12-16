@@ -4,26 +4,26 @@ A React Native + Expo app that trains users to recognize scams through realistic
 
 ## Features
 
-### 🎮 Two Modes
+###  Two Modes
 
 **Test Mode** - Take a scored test with 6 random scenarios (mix of scams and legitimate messages). Get graded A-F based on your responses.
 
 **Practice Mode** - Explore individual scenarios at your own pace with optional guided walkthroughs.
 
-### 📞 Phone Call Scams
+###  Phone Call Scams
 - **Grandchild Emergency** - Fake family member in trouble asking for money
 - **Bank Fraud Department** - Caller pretending to be from your bank's security team
 - **Hydro-Québec** - Fake utility company threatening service disconnection
 
-### 💬 Text Message Scams
+###  Text Message Scams
 - **Canada Post Fee** - Fake delivery notification asking for payment
 - **Hydro-Québec Refund** - Phishing link disguised as a refund offer
 - **TD Bank Security** - Fake security alert with malicious download
 
-### 📧 Email Scams
+###  Email Scams
 - **Loto-Québec Prize** - Fake lottery winning notification
 
-### ✅ Legitimate Scenarios (for Test Mode)
+###  Legitimate Scenarios (for Test Mode)
 The app also includes real legitimate messages to train users not to be overly paranoid:
 - Canada Post delivery updates
 - Medical clinic reminders
@@ -32,7 +32,7 @@ The app also includes real legitimate messages to train users not to be overly p
 - CRA account updates
 - Desjardins activity alerts
 
-### 🌐 Fake Websites
+###  Fake Websites
 Realistic phishing page simulations:
 - Hydro-Québec login page
 - Canada Post payment portal
